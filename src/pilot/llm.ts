@@ -23,6 +23,8 @@ export interface ChatMessage {
 /** The LLM client interface. */
 export interface LLMClient {
 	resolveStep(step: string, pageState: PageState): Promise<Action>
+	/** Reset conversation history (call between test cases). */
+	resetHistory(): void
 }
 
 /** System prompt that defines the Pilot's persona and expected response format. */
@@ -41,7 +43,7 @@ Available actions:
 - press: Press a keyboard key. Requires "value" (key name, e.g. "Enter", "Tab", "Escape").
 - wait: Wait for a condition. Requires "value" (description of what to wait for).
 - assert: Check a condition on the page. Requires "assertion" with "type" and "expected".
-  Assertion types: "contains_text", "url_contains", "element_visible", "element_not_visible".
+  Assertion types: "contains_text", "not_contains_text", "url_contains", "element_visible", "element_not_visible".
 
 Respond with ONLY a JSON object. No markdown, no explanation. Example responses:
 
@@ -53,6 +55,61 @@ Respond with ONLY a JSON object. No markdown, no explanation. Example responses:
 {"action":"assert","assertion":{"type":"contains_text","expected":"Welcome back"}}
 {"action":"scroll","value":"down"}
 `
+
+// ── Step patterns that can be resolved without an LLM call ──────────
+
+const STEP_PATTERNS: {
+	pattern: RegExp
+	toAction: (m: RegExpMatchArray) => Action
+}[] = [
+	{
+		pattern: /^check that page contains "([^"]+)"$/i,
+		toAction: (m) => ({
+			action: "assert",
+			assertion: { type: "contains_text", expected: m[1] },
+		}),
+	},
+	{
+		pattern: /^check that page does not contain "([^"]+)"$/i,
+		toAction: (m) => ({
+			action: "assert",
+			assertion: { type: "not_contains_text", expected: m[1] },
+		}),
+	},
+	{
+		pattern: /^check that URL contains "([^"]+)"$/i,
+		toAction: (m) => ({
+			action: "assert",
+			assertion: { type: "url_contains", expected: m[1] },
+		}),
+	},
+	{
+		pattern: /^press (\w+)$/i,
+		toAction: (m) => ({ action: "press", value: m[1] }),
+	},
+	{
+		pattern: /^go to "([^"]+)"$/i,
+		toAction: (m) => ({ action: "navigate", value: m[1] }),
+	},
+	{
+		pattern: /^scroll (up|down)$/i,
+		toAction: (m) => ({ action: "scroll", value: m[1].toLowerCase() }),
+	},
+]
+
+/**
+ * Try to resolve a step from its text alone, without calling the LLM.
+ * Returns the Action if matched, or undefined if the LLM is needed.
+ */
+export function tryParseStep(step: string): Action | undefined {
+	for (const { pattern, toAction } of STEP_PATTERNS) {
+		const match = pattern.exec(step)
+		if (match) return toAction(match)
+	}
+	return undefined
+}
+
+// ── Message construction ────────────────────────────────────────────
 
 /** Build the user message containing the step and page state. */
 export function buildUserMessage(step: string, pageState: PageState): string {
@@ -159,13 +216,40 @@ export function resolveLLMConfig(runConfig: RunConfig): LLMClientConfig {
 	}
 }
 
-/** Create an LLM client that calls the OpenAI-compatible chat completions endpoint. */
+/**
+ * Create an LLM client that maintains conversation history within a test case.
+ * The system prompt is sent once. Each step adds a user message and the LLM's
+ * response to the history, giving the model context about prior actions.
+ * Call resetHistory() between test cases.
+ */
 export function createLLMClient(config: LLMClientConfig): LLMClient {
 	const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`
+	let history: ChatMessage[] = []
+	const cache = new Map<string, Action>()
 
 	return {
+		resetHistory() {
+			history = []
+		},
+
 		async resolveStep(step: string, pageState: PageState): Promise<Action> {
-			const messages = buildMessages(step, pageState)
+			// Try to resolve without the LLM first
+			const parsed = tryParseStep(step)
+			if (parsed) return parsed
+
+			// Check cache: same step on same page state → same action
+			const cacheKey = `${step}\0${pageState.url}`
+			const cached = cache.get(cacheKey)
+			if (cached) return cached
+
+			const userMessage = buildUserMessage(step, pageState)
+
+			// Build messages: system + history + new user message
+			const messages: ChatMessage[] = [
+				{ role: "system", content: SYSTEM_PROMPT },
+				...history,
+				{ role: "user", content: userMessage },
+			]
 
 			const response = await fetch(endpoint, {
 				method: "POST",
@@ -194,7 +278,18 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 				throw new Error("LLM returned empty response")
 			}
 
-			return parseActionResponse(content)
+			const action = parseActionResponse(content)
+
+			// Cache the result for identical future requests
+			cache.set(cacheKey, action)
+
+			// Append this exchange to history for subsequent steps
+			history.push(
+				{ role: "user", content: userMessage },
+				{ role: "assistant", content: content },
+			)
+
+			return action
 		},
 	}
 }

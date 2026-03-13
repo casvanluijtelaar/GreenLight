@@ -11,17 +11,11 @@ import {
 	closeBrowser,
 	toBrowserOptions,
 } from "../browser/browser.js"
-import {
-	capturePageState,
-	attachConsoleCollector,
-	resetRefCounter,
-	formatA11yTree,
-} from "../pilot/state.js"
+import { attachConsoleCollector } from "../pilot/state.js"
 import { resolveLLMConfig, createLLMClient } from "../pilot/llm.js"
-import { executeAction } from "../pilot/executor.js"
+import { runTestCase } from "../pilot/pilot.js"
 import { resolve } from "node:path"
 import { glob } from "node:fs"
-import { writeFile } from "node:fs/promises"
 
 const program = new Command()
 
@@ -117,104 +111,78 @@ program
 
 					console.log(`\nSuite: ${suite.suite}`)
 					console.log(`URL:   ${suite.base_url}`)
+					console.log(`Model: ${effectiveModel}`)
 
-					// Launch browser and navigate
+					// Create LLM client
+					const llmConfig = resolveLLMConfig({
+						...config,
+						model: effectiveModel,
+					})
+					const llm = createLLMClient(llmConfig)
+
+					// Launch browser
 					const browserOpts = toBrowserOptions(config)
 					const browser = await launchBrowser(browserOpts)
 
 					try {
-						const context = await createContext(browser, browserOpts)
-						const page = await createPage(context)
-						const { drain } = attachConsoleCollector(page)
+						// Filter tests
+						const tests = config.testFilter
+							? suite.tests.filter((t) => t.name === config.testFilter)
+							: suite.tests
 
-						await page.goto(suite.base_url)
-						resetRefCounter()
-
-						const state = await capturePageState(page, drain)
-
-						if (opts.debug) {
-							console.log(`\nAccessibility tree (${suite.base_url}):\n`)
-							console.log(formatA11yTree(state.a11yTree))
-
-							const screenshotPath = resolve("screenshot.png")
-							await writeFile(
-								screenshotPath,
-								Buffer.from(state.screenshot, "base64"),
-							)
-							console.log(`\nScreenshot saved: ${screenshotPath}`)
-							console.log(`Page title: ${state.title}`)
-							console.log(
-								`Console logs: ${String(state.consoleLogs.length)} entries`,
-							)
-						}
-
-						// Print test cases
-						for (const test of suite.tests) {
-							if (config.testFilter && test.name !== config.testFilter) {
-								continue
-							}
+						for (const test of tests) {
 							console.log(`\n  Test: ${test.name}`)
-							for (const step of test.steps) {
-								console.log(`    - ${step}`)
+
+							// Fresh context per test case
+							const context = await createContext(browser, browserOpts)
+							const page = await createPage(context)
+							const { drain } = attachConsoleCollector(page)
+
+							await page.goto(suite.base_url)
+
+							const result = await runTestCase(page, test, llm, {
+								timeout: config.timeout,
+								consoleDrain: drain,
+								debug: opts.debug,
+							})
+
+							// Print step-by-step results
+							for (const stepResult of result.steps) {
+								const icon =
+									stepResult.status === "passed"
+										? "\x1b[32m\u2713\x1b[0m"
+										: "\x1b[31m\u2717\x1b[0m"
+								const dur = `${String(Math.round(stepResult.duration))}ms`
+								const t = stepResult.timing
+								const phases = t
+									? ` \x1b[90m[capture:${String(Math.round(t.capture))} llm:${String(Math.round(t.llm))} exec:${String(Math.round(t.execute))} post:${String(Math.round(t.postCapture))}ms]\x1b[0m`
+									: ""
+								console.log(`    ${icon} ${stepResult.step} (${dur})${phases}`)
+								if (stepResult.error) {
+									console.log(`      \x1b[31m${stepResult.error}\x1b[0m`)
+								}
+								if (opts.debug && stepResult.action) {
+									console.log(
+										`      Action: ${JSON.stringify(stepResult.action)}`,
+									)
+								}
 							}
-						}
 
-						// Step 5 test harness: resolve + execute first step
-						const firstTest = config.testFilter
-							? suite.tests.find((t) => t.name === config.testFilter)
-							: suite.tests[0]
-
-						if (firstTest && firstTest.steps.length > 0) {
-							const step = firstTest.steps[0]
+							// Summary for this test
+							const testIcon =
+								result.status === "passed"
+									? "\x1b[32mPASSED\x1b[0m"
+									: "\x1b[31mFAILED\x1b[0m"
 							console.log(
-								`\n  Sending step to LLM (${effectiveModel}): "${step}"`,
+								`\n  ${testIcon} (${String(Math.round(result.duration))}ms)`,
 							)
 
-							try {
-								const llmConfig = resolveLLMConfig({
-									...config,
-									model: effectiveModel,
-								})
-								const llm = createLLMClient(llmConfig)
-								const action = await llm.resolveStep(step, state)
-								console.log("  LLM action:", JSON.stringify(action))
-
-								// Execute the action
-								console.log("  Executing action...")
-								const result = await executeAction(page, action, state.a11yTree)
-
-								if (result.success) {
-									console.log(
-										`  Action succeeded (${Math.round(result.duration)}ms)`,
-									)
-								} else {
-									console.error(
-										`  Action failed: ${result.error ?? "unknown error"}`,
-									)
-								}
-
-								// Capture post-action state
-								resetRefCounter()
-								const postState = await capturePageState(page, drain)
-
-								if (opts.debug) {
-									console.log(`\n  Post-action a11y tree:\n`)
-									console.log(formatA11yTree(postState.a11yTree))
-								}
-
-								console.log(`  Post-action URL: ${postState.url}`)
-							} catch (err) {
-								if (err instanceof Error) {
-									console.error(`  LLM error: ${err.message}`)
-								}
+							if (config.headed) {
+								await new Promise((r) => setTimeout(r, 2000))
 							}
-						}
 
-						if (config.headed) {
-							await new Promise((r) => setTimeout(r, 2000))
+							await context.close()
 						}
-
-						await context.close()
 					} finally {
 						await closeBrowser(browser)
 					}
@@ -226,8 +194,6 @@ program
 					process.exit(1)
 				}
 			}
-
-			console.log("\nNo runner implemented yet. Exiting.")
 		},
 	)
 

@@ -6,6 +6,7 @@ import {
 	resolveApiKey,
 	resolveLLMConfig,
 	createLLMClient,
+	tryParseStep,
 	SYSTEM_PROMPT,
 } from "../../src/pilot/llm.js"
 import type { PageState } from "../../src/reporter/types.js"
@@ -298,5 +299,211 @@ describe("createLLMClient", () => {
 
 		const fetchCall = vi.mocked(fetch).mock.calls[0]
 		expect(fetchCall[0]).toBe("https://openrouter.ai/api/v1/chat/completions")
+	})
+
+	it("skips LLM for steps resolved by tryParseStep", async () => {
+		globalThis.fetch = vi.fn()
+
+		const client = createLLMClient({
+			apiKey: "sk-test",
+			baseUrl: "https://openrouter.ai/api/v1",
+			model: "test-model",
+		})
+
+		const action = await client.resolveStep(
+			'check that page contains "Hello"',
+			mockPageState,
+		)
+		expect(action).toEqual({
+			action: "assert",
+			assertion: { type: "contains_text", expected: "Hello" },
+		})
+		expect(fetch).not.toHaveBeenCalled()
+	})
+
+	it("accumulates conversation history across calls", async () => {
+		globalThis.fetch = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				json: () =>
+					Promise.resolve({
+						choices: [
+							{ message: { content: '{"action":"click","ref":"e1"}' } },
+						],
+					}),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: () =>
+					Promise.resolve({
+						choices: [
+							{ message: { content: '{"action":"click","ref":"e2"}' } },
+						],
+					}),
+			})
+
+		const client = createLLMClient({
+			apiKey: "sk-test",
+			baseUrl: "https://openrouter.ai/api/v1",
+			model: "test-model",
+		})
+
+		await client.resolveStep('click "Home"', mockPageState)
+		await client.resolveStep('click "About"', mockPageState)
+
+		// Second call should include history from first call
+		const secondCall = vi.mocked(fetch).mock.calls[1]
+		const body = JSON.parse(secondCall[1]?.body as string) as {
+			messages: { role: string }[]
+		}
+		// system + user1 + assistant1 + user2 = 4 messages
+		expect(body.messages).toHaveLength(4)
+		expect(body.messages[0].role).toBe("system")
+		expect(body.messages[1].role).toBe("user")
+		expect(body.messages[2].role).toBe("assistant")
+		expect(body.messages[3].role).toBe("user")
+	})
+
+	it("returns cached result for identical step and page state", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: () =>
+				Promise.resolve({
+					choices: [{ message: { content: '{"action":"click","ref":"e1"}' } }],
+				}),
+		})
+
+		const client = createLLMClient({
+			apiKey: "sk-test",
+			baseUrl: "https://openrouter.ai/api/v1",
+			model: "test-model",
+		})
+
+		const first = await client.resolveStep('click "Home"', mockPageState)
+		const second = await client.resolveStep('click "Home"', mockPageState)
+
+		expect(first).toEqual(second)
+		// Only one fetch call — second was served from cache
+		expect(fetch).toHaveBeenCalledTimes(1)
+	})
+
+	it("does not use cache when URL differs", async () => {
+		globalThis.fetch = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				json: () =>
+					Promise.resolve({
+						choices: [
+							{ message: { content: '{"action":"click","ref":"e1"}' } },
+						],
+					}),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: () =>
+					Promise.resolve({
+						choices: [
+							{ message: { content: '{"action":"click","ref":"e5"}' } },
+						],
+					}),
+			})
+
+		const client = createLLMClient({
+			apiKey: "sk-test",
+			baseUrl: "https://openrouter.ai/api/v1",
+			model: "test-model",
+		})
+
+		await client.resolveStep('click "Home"', mockPageState)
+		await client.resolveStep('click "Home"', {
+			...mockPageState,
+			url: "https://staging.example.com/other",
+		})
+
+		// Different page state → two fetch calls
+		expect(fetch).toHaveBeenCalledTimes(2)
+	})
+
+	it("clears history on resetHistory", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: () =>
+				Promise.resolve({
+					choices: [{ message: { content: '{"action":"click","ref":"e1"}' } }],
+				}),
+		})
+
+		const client = createLLMClient({
+			apiKey: "sk-test",
+			baseUrl: "https://openrouter.ai/api/v1",
+			model: "test-model",
+		})
+
+		await client.resolveStep('click "Home"', mockPageState)
+		client.resetHistory()
+		await client.resolveStep('click "About"', mockPageState)
+
+		const secondCall = vi.mocked(fetch).mock.calls[1]
+		const body = JSON.parse(secondCall[1]?.body as string) as {
+			messages: { role: string }[]
+		}
+		// After reset: system + user = 2 messages (no history)
+		expect(body.messages).toHaveLength(2)
+	})
+})
+
+describe("tryParseStep", () => {
+	it("parses contains_text assertion", () => {
+		const action = tryParseStep('check that page contains "Welcome"')
+		expect(action).toEqual({
+			action: "assert",
+			assertion: { type: "contains_text", expected: "Welcome" },
+		})
+	})
+
+	it("parses not_contains_text assertion", () => {
+		const action = tryParseStep('check that page does not contain "Error"')
+		expect(action).toEqual({
+			action: "assert",
+			assertion: { type: "not_contains_text", expected: "Error" },
+		})
+	})
+
+	it("parses url_contains assertion", () => {
+		const action = tryParseStep('check that URL contains "/dashboard"')
+		expect(action).toEqual({
+			action: "assert",
+			assertion: { type: "url_contains", expected: "/dashboard" },
+		})
+	})
+
+	it("parses press action", () => {
+		expect(tryParseStep("press Enter")).toEqual({
+			action: "press",
+			value: "Enter",
+		})
+	})
+
+	it("parses go to action", () => {
+		expect(tryParseStep('go to "/products"')).toEqual({
+			action: "navigate",
+			value: "/products",
+		})
+	})
+
+	it("parses scroll action", () => {
+		expect(tryParseStep("scroll down")).toEqual({
+			action: "scroll",
+			value: "down",
+		})
+	})
+
+	it("returns undefined for steps that need LLM", () => {
+		expect(tryParseStep('click "Sign In"')).toBeUndefined()
+		expect(
+			tryParseStep('enter "test@example.com" into "Email"'),
+		).toBeUndefined()
 	})
 })

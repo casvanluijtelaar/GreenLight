@@ -14,6 +14,10 @@ reusable_steps:
     - check that page contains "{{search_term}}"
 
 tests:
+  - name: "Site loads successfully"
+    steps:
+      - check that page contains "Welcome to Wikipedia"
+
   - name: "User can search Wikipedia"
     steps:
       - search for term

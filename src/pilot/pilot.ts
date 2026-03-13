@@ -7,14 +7,11 @@ import type { Page } from "playwright"
 import type {
 	Action,
 	StepResult,
+	StepTiming,
 	TestCaseResult,
 } from "../reporter/types.js"
 import type { LLMClient } from "./llm.js"
-import {
-	capturePageState,
-	resetRefCounter,
-	formatA11yTree,
-} from "./state.js"
+import { capturePageState, resetRefCounter, formatA11yTree } from "./state.js"
 import { executeAction } from "./executor.js"
 import type { ConsoleEntry } from "../reporter/types.js"
 
@@ -40,14 +37,25 @@ export async function runTestCase(
 	const startTime = performance.now()
 	const stepResults: StepResult[] = []
 
+	// Fresh conversation history for each test case
+	llm.resetHistory()
+
 	for (const step of testCase.steps) {
 		const stepStart = performance.now()
 		let action: Action | null = null
+		const timing: StepTiming = {
+			capture: 0,
+			llm: 0,
+			execute: 0,
+			postCapture: 0,
+		}
 
 		try {
 			// Capture current page state
+			let t0 = performance.now()
 			resetRefCounter()
 			const state = await capturePageState(page, options.consoleDrain)
+			timing.capture = performance.now() - t0
 
 			if (options.debug) {
 				console.log(`\n      A11y tree:\n`)
@@ -55,14 +63,18 @@ export async function runTestCase(
 			}
 
 			// Ask LLM to resolve the step
+			t0 = performance.now()
 			action = await llm.resolveStep(step, state)
+			timing.llm = performance.now() - t0
 
 			if (options.debug) {
 				console.log(`      LLM action: ${JSON.stringify(action)}`)
 			}
 
 			// Execute the action
+			t0 = performance.now()
 			const result = await executeAction(page, action, state.a11yTree)
+			timing.execute = performance.now() - t0
 
 			if (!result.success) {
 				stepResults.push({
@@ -70,19 +82,30 @@ export async function runTestCase(
 					action,
 					status: "failed",
 					duration: performance.now() - stepStart,
+					timing,
 					error: result.error,
 				})
 				break
 			}
 
 			// Capture post-action screenshot for reporting
-			const postState = await capturePageState(page, options.consoleDrain)
+			// Retry once if the page is mid-navigation
+			t0 = performance.now()
+			let postState
+			try {
+				postState = await capturePageState(page, options.consoleDrain)
+			} catch {
+				await page.waitForLoadState("domcontentloaded")
+				postState = await capturePageState(page, options.consoleDrain)
+			}
+			timing.postCapture = performance.now() - t0
 
 			stepResults.push({
 				step,
 				action,
 				status: "passed",
 				duration: performance.now() - stepStart,
+				timing,
 				screenshot: postState.screenshot,
 			})
 		} catch (err) {
@@ -91,6 +114,7 @@ export async function runTestCase(
 				action,
 				status: "failed",
 				duration: performance.now() - stepStart,
+				timing,
 				error: err instanceof Error ? err.message : String(err),
 			})
 			break
@@ -98,7 +122,6 @@ export async function runTestCase(
 	}
 
 	const allPassed = stepResults.every((s) => s.status === "passed")
-	// If we broke early, remaining steps weren't run — overall is failed
 	const status =
 		allPassed && stepResults.length === testCase.steps.length
 			? "passed"

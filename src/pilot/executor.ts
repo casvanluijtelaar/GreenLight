@@ -23,25 +23,160 @@ export function findNodeByRef(
 }
 
 /**
- * Resolve an element ref to a Playwright locator using the node's role and name.
+ * Find the path from root to a node by ref.
+ * Returns the chain of ancestor nodes including the target, or undefined.
  */
-export function resolveLocator(
+export function findNodePath(
+	nodes: A11yNode[],
+	ref: string,
+	path: A11yNode[] = [],
+): A11yNode[] | undefined {
+	for (const node of nodes) {
+		const currentPath = [...path, node]
+		if (node.ref === ref) return currentPath
+		if (node.children) {
+			const found = findNodePath(node.children, ref, currentPath)
+			if (found) return found
+		}
+	}
+	return undefined
+}
+
+type AriaRole = Parameters<Page["getByRole"]>[0]
+
+/**
+ * Given a locator, return it if it matches exactly one element,
+ * or return the first visible match if there are several.
+ * Returns undefined if the locator matches nothing.
+ */
+async function pickVisible(locator: Locator): Promise<Locator | undefined> {
+	try {
+		const count = await locator.count()
+		if (count === 1) return locator
+		if (count > 1) {
+			for (let i = 0; i < count; i++) {
+				const nth = locator.nth(i)
+				if (await nth.isVisible()) return nth
+			}
+		}
+	} catch {
+		// Locator failed entirely
+	}
+	return undefined
+}
+
+function roleLocator(scope: Page | Locator, node: A11yNode): Locator {
+	const role = node.role as AriaRole
+	if (node.name) {
+		return scope.getByRole(role, { name: node.name, exact: true })
+	}
+	return scope.getByRole(role)
+}
+
+/**
+ * Resolve an element ref to a Playwright locator using the a11y tree hierarchy.
+ *
+ * Primary strategy: chain getByRole calls from ancestor → target using the
+ * same tree structure that ariaSnapshot reported. This disambiguates elements
+ * that share the same role+name but live under different parents.
+ *
+ * Fallback strategies (tried in order if chained locator doesn't match):
+ *   1. Direct getByRole (ignoring hierarchy)
+ *   2. getByLabel (for form inputs)
+ *   3. getByPlaceholder (for text inputs)
+ * Returns the first locator that resolves to a single visible element.
+ */
+export async function resolveLocator(
 	page: Page,
 	nodes: A11yNode[],
 	ref: string,
-): Locator {
-	const node = findNodeByRef(nodes, ref)
-	if (!node) {
+): Promise<Locator> {
+	const path = findNodePath(nodes, ref)
+	if (!path || path.length === 0) {
 		throw new Error(`Element ref "${ref}" not found in accessibility tree`)
 	}
 
-	if (node.name) {
-		return page.getByRole(node.role as Parameters<Page["getByRole"]>[0], {
-			name: node.name,
-		})
+	const target = path[path.length - 1]
+	const role = target.role as AriaRole
+
+	// Build candidates list, best to worst
+	const candidates: Locator[] = []
+
+	// 1. Chained locator using ancestor hierarchy
+	//    Use named ancestors to scope the search progressively
+	if (path.length > 1) {
+		let scoped: Locator | undefined
+		for (const ancestor of path.slice(0, -1)) {
+			// Only chain through named nodes — unnamed structural nodes
+			// (like bare "list" or "main") add noise without disambiguation
+			if (!ancestor.name) continue
+			scoped = roleLocator(scoped ?? page, ancestor)
+		}
+		if (scoped) {
+			candidates.push(roleLocator(scoped, target))
+		}
 	}
 
-	return page.getByRole(node.role as Parameters<Page["getByRole"]>[0])
+	// 2. Direct getByRole with exact name
+	if (target.name) {
+		candidates.push(page.getByRole(role, { name: target.name, exact: true }))
+	}
+
+	// 3. getByLabel (finds inputs by associated label text)
+	if (target.name) {
+		candidates.push(page.getByLabel(target.name, { exact: true }))
+	}
+
+	// 4. getByPlaceholder (finds inputs by placeholder attribute)
+	if (target.name) {
+		candidates.push(page.getByPlaceholder(target.name, { exact: true }))
+	}
+
+	// 5. Direct getByRole with loose name match
+	if (target.name) {
+		candidates.push(page.getByRole(role, { name: target.name }))
+	}
+
+	// Try each candidate: return the first that matches exactly one element,
+	// or the first visible element when there are multiple matches.
+	for (const locator of candidates) {
+		const match = await pickVisible(locator)
+		if (match) return match
+	}
+
+	// Last resort — return the basic locator and let Playwright handle errors
+	if (target.name) {
+		return page.getByRole(role, { name: target.name })
+	}
+	return page.getByRole(role)
+}
+
+/**
+ * Run an action that might trigger navigation.
+ * Listens for a 'framenavigated' event during the action — if one fires,
+ * waits for the new page to reach domcontentloaded. If no navigation
+ * happens, returns immediately with no delay.
+ */
+async function runWithNavigationHandling(
+	page: Page,
+	action: () => Promise<void>,
+): Promise<void> {
+	// Track whether the action triggers a navigation via event callback.
+	// The flag is mutated asynchronously by the event handler.
+	const state = { navigated: false }
+	const onNav = () => {
+		state.navigated = true
+	}
+
+	page.on("framenavigated", onNav)
+	try {
+		await action()
+		if (state.navigated) {
+			await page.waitForLoadState("domcontentloaded")
+		}
+	} finally {
+		page.off("framenavigated", onNav)
+	}
 }
 
 /**
@@ -60,8 +195,8 @@ export async function executeAction(
 				if (!action.ref) {
 					throw new Error("click action requires a ref")
 				}
-				const locator = resolveLocator(page, a11yTree, action.ref)
-				await locator.click()
+				const locator = await resolveLocator(page, a11yTree, action.ref)
+				await runWithNavigationHandling(page, () => locator.click())
 				break
 			}
 
@@ -72,8 +207,15 @@ export async function executeAction(
 				if (!action.value) {
 					throw new Error("type action requires a value")
 				}
-				const locator = resolveLocator(page, a11yTree, action.ref)
-				await locator.fill(action.value)
+				const locator = await resolveLocator(page, a11yTree, action.ref)
+				// Click the target to focus/activate it (may open an input overlay).
+				// Use navigation handling in case the click triggers a page change.
+				await runWithNavigationHandling(page, () => locator.click())
+				// Clear existing content and type character-by-character
+				// via the keyboard, triggering proper JS events
+				await page.keyboard.press("Control+A")
+				await page.keyboard.press("Backspace")
+				await page.keyboard.type(action.value, { delay: 30 })
 				break
 			}
 
@@ -84,14 +226,14 @@ export async function executeAction(
 				if (!action.value) {
 					throw new Error("select action requires a value")
 				}
-				const locator = resolveLocator(page, a11yTree, action.ref)
+				const locator = await resolveLocator(page, a11yTree, action.ref)
 				await locator.selectOption({ label: action.value })
 				break
 			}
 
 			case "scroll": {
 				if (action.ref) {
-					const locator = resolveLocator(page, a11yTree, action.ref)
+					const locator = await resolveLocator(page, a11yTree, action.ref)
 					await locator.scrollIntoViewIfNeeded()
 				} else {
 					const delta = action.value === "up" ? -500 : 500
@@ -104,7 +246,10 @@ export async function executeAction(
 				if (!action.value) {
 					throw new Error("press action requires a value")
 				}
-				await page.keyboard.press(action.value)
+				const key = action.value
+				await runWithNavigationHandling(page, () =>
+					page.keyboard.press(key),
+				)
 				break
 			}
 
@@ -115,7 +260,7 @@ export async function executeAction(
 				const url = action.value.startsWith("/")
 					? new URL(action.value, page.url()).href
 					: action.value
-				await page.goto(url)
+				await page.goto(url, { waitUntil: "domcontentloaded" })
 				break
 			}
 
@@ -163,8 +308,20 @@ async function executeAssertion(
 	switch (assertion.type) {
 		case "contains_text": {
 			const body = await page.locator("body").textContent()
-			if (!body?.includes(assertion.expected)) {
+			if (!body?.toLowerCase().includes(assertion.expected.toLowerCase())) {
 				throw new Error(`Page does not contain text: "${assertion.expected}"`)
+			}
+			break
+		}
+
+		case "not_contains_text": {
+			const bodyText = await page.locator("body").textContent()
+			if (
+				bodyText?.toLowerCase().includes(assertion.expected.toLowerCase())
+			) {
+				throw new Error(
+					`Page contains text it should not: "${assertion.expected}"`,
+				)
 			}
 			break
 		}

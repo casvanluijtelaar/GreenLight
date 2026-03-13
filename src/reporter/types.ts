@@ -45,6 +45,18 @@ export interface ExecutionResult {
 	error?: string
 }
 
+/** Per-phase timing breakdown for a step. */
+export interface StepTiming {
+	/** Time to capture page state (a11y tree + screenshot) in ms. */
+	capture: number
+	/** Time for the LLM to return an action in ms. */
+	llm: number
+	/** Time to execute the action in the browser in ms. */
+	execute: number
+	/** Time to capture post-action state in ms. */
+	postCapture: number
+}
+
 /** Result of a single step within a test case. */
 export interface StepResult {
 	/** The plain-English step text. */
@@ -55,6 +67,8 @@ export interface StepResult {
 	status: "passed" | "failed"
 	/** Total duration for this step (LLM + execution) in ms. */
 	duration: number
+	/** Per-phase timing breakdown. */
+	timing?: StepTiming
 	/** Post-action screenshot (base64 PNG). */
 	screenshot?: string
 	/** Error message if the step failed. */

@@ -5,7 +5,11 @@ import {
 	createPage,
 	closeBrowser,
 } from "../../src/browser/browser.js"
-import { executeAction, findNodeByRef } from "../../src/pilot/executor.js"
+import {
+	executeAction,
+	findNodeByRef,
+	findNodePath,
+} from "../../src/pilot/executor.js"
 import type { A11yNode, Action } from "../../src/reporter/types.js"
 import { DEFAULTS } from "../../src/types.js"
 
@@ -49,6 +53,27 @@ describe("findNodeByRef", () => {
 
 	it("returns undefined for missing ref", () => {
 		expect(findNodeByRef(sampleTree, "e99")).toBeUndefined()
+	})
+})
+
+describe("findNodePath", () => {
+	it("returns path to a root-level node", () => {
+		const path = findNodePath(sampleTree, "e3")
+		expect(path).toHaveLength(1)
+		expect(path?.[0].role).toBe("textbox")
+	})
+
+	it("returns path including ancestors for nested node", () => {
+		const path = findNodePath(sampleTree, "e1")
+		expect(path).toHaveLength(2)
+		expect(path?.[0].role).toBe("navigation")
+		expect(path?.[0].name).toBe("Nav")
+		expect(path?.[1].role).toBe("link")
+		expect(path?.[1].name).toBe("Home")
+	})
+
+	it("returns undefined for missing ref", () => {
+		expect(findNodePath(sampleTree, "e99")).toBeUndefined()
 	})
 })
 
