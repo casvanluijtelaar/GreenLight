@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 256 256">
+  <!-- Generator: Adobe Illustrator 30.2.1, SVG Export Plug-In . SVG Version: 2.1.1 Build 1)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: url(#linear-gradient1);
+      }
+
+      .st1 {
+        fill: #1c771e;
+        stroke: #0e5b03;
+        stroke-opacity: .4;
+        stroke-width: 21px;
+      }
+
+      .st2 {
+        fill: url(#radial-gradient);
+      }
+
+      .st3 {
+        fill: url(#linear-gradient);
+      }
+
+      .st4 {
+        stroke: #5bc474;
+        stroke-opacity: .3;
+      }
+
+      .st4, .st5, .st6 {
+        fill: none;
+      }
+
+      .st4, .st6 {
+        stroke-width: 1.5px;
+      }
+
+      .st5 {
+        stroke: #fff;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 14px;
+      }
+
+      .st6 {
+        stroke: #2aaa4a;
+        stroke-opacity: .5;
+      }
+
+      .st7 {
+        fill: url(#radial-gradient1);
+      }
+
+      .st8 {
+        fill: url(#radial-gradient2);
+      }
+
+      .st9 {
+        filter: url(#shadow);
+      }
+    </style>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" flood-color="#0a2e14" flood-opacity="0.4" stdDeviation="6"/>
+    </filter>
+    <linearGradient id="linear-gradient" x1="-380.8" y1="511.9" x2="-380.8" y2="510.9" gradientTransform="translate(85425 114673) scale(224 -224)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2d6b3f"/>
+      <stop offset="1" stop-color="#1a3d24"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient" cx="-380.6" cy="511.2" fx="-380.6" fy="511.2" r=".5" gradientTransform="translate(76245 102373) scale(200 -200)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6de88a" stop-opacity=".4"/>
+      <stop offset="1" stop-color="#6de88a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient1" x1="-380.2" y1="511.4" x2="-380.2" y2="510.4" gradientTransform="translate(62475 83923) scale(164 -164)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3a9e55"/>
+      <stop offset="1" stop-color="#267a3a"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient1" cx="-379.7" cy="510.7" fx="-379.7" fy="510.7" r=".6" gradientTransform="translate(51765 69573) scale(136 -136)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6de88a"/>
+      <stop offset=".6" stop-color="#34c759"/>
+      <stop offset="1" stop-color="#1f9e3e"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient2" cx="-379.7" cy="510.8" fx="-379.7" fy="510.8" r=".4" gradientTransform="translate(51765 69573) scale(136 -136)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity=".3"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g class="st9">
+    <rect class="st3" x="16" y="16" width="224" height="224" rx="48" ry="48"/>
+  </g>
+  <rect class="st1" x="16" y="16" width="224" height="224" rx="48" ry="48"/>
+  <circle class="st2" cx="128" cy="128" r="100"/>
+  <circle class="st0" cx="128" cy="128" r="82"/>
+  <circle class="st4" cx="128" cy="128" r="82"/>
+  <circle class="st7" cx="128" cy="128" r="68"/>
+  <circle class="st8" cx="128" cy="128" r="68"/>
+  <circle class="st6" cx="128" cy="128" r="68"/>
+  <polyline class="st5" points="92 132 116 156 168 104"/>
+</svg>

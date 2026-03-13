@@ -23,7 +23,6 @@ Thumbs.db
 # Test artifacts
 results.json
 report.html
-*.png
 .playwright-cli/
 
 # Logs
