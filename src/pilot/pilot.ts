@@ -5,15 +5,17 @@
 
 import type { Page } from "playwright"
 import type {
+	A11yNode,
 	Action,
+	ConsoleEntry,
 	StepResult,
 	StepTiming,
 	TestCaseResult,
 } from "../reporter/types.js"
-import type { LLMClient } from "./llm.js"
+import type { LLMClient, PlannedStep } from "./llm.js"
 import { capturePageState, resetRefCounter, formatA11yTree } from "./state.js"
 import { executeAction } from "./executor.js"
-import type { ConsoleEntry } from "../reporter/types.js"
+import type { TraceLogger } from "./trace.js"
 
 export interface PilotOptions {
 	/** Per-step timeout in ms. */
@@ -22,6 +24,8 @@ export interface PilotOptions {
 	consoleDrain: () => ConsoleEntry[]
 	/** Whether to print debug output. */
 	debug: boolean
+	/** Optional trace logger for performance analysis. */
+	trace?: TraceLogger
 }
 
 /**
@@ -40,7 +44,46 @@ export async function runTestCase(
 	// Fresh conversation history for each test case
 	llm.resetHistory()
 
-	for (const step of testCase.steps) {
+	const trace = options.trace
+
+	// Pre-plan all steps: the LLM interprets the full spec and returns
+	// structured actions for steps it can resolve without page state.
+	// Compound steps may be split into multiple atomic actions.
+	trace?.log("plan:start", `${String(testCase.steps.length)} steps`)
+	if (options.debug) {
+		console.log(`\n      Plan input:`)
+		for (const s of testCase.steps) {
+			console.log(`        - ${s}`)
+		}
+	}
+	const planStart = performance.now()
+	let plan: PlannedStep[]
+	try {
+		plan = await llm.planSteps(testCase.steps)
+	} catch (err) {
+		// If planning fails, fall back to runtime resolution for all steps
+		const msg = err instanceof Error ? err.message : String(err)
+		trace?.log("plan:error", msg)
+		if (options.debug) {
+			console.log(`      Plan error: ${msg}`)
+		}
+		plan = testCase.steps.map((s) => ({ step: s, action: null }))
+	}
+	trace?.log("plan:done", `${String(Math.round(performance.now() - planStart))}ms`)
+	if (options.debug) {
+		console.log(`\n      Plan output (${String(plan.length)} actions):`)
+		for (let i = 0; i < plan.length; i++) {
+			const p = plan[i]
+			const label = p.action ? JSON.stringify(p.action) : "(needs page state)"
+			console.log(`        ${String(i + 1)}. ${p.step} → ${label}`)
+		}
+		console.log()
+	}
+
+	for (const planned of plan) {
+		const { step, action: plannedAction } = planned
+
+		trace?.log("step:start", step)
 		const stepStart = performance.now()
 		let action: Action | null = null
 		const timing: StepTiming = {
@@ -51,30 +94,51 @@ export async function runTestCase(
 		}
 
 		try {
-			// Capture current page state
-			let t0 = performance.now()
-			resetRefCounter()
-			const state = await capturePageState(page, options.consoleDrain)
-			timing.capture = performance.now() - t0
+			let a11yTree: A11yNode[] = []
 
-			if (options.debug) {
-				console.log(`\n      A11y tree:\n`)
-				console.log(formatA11yTree(state.a11yTree))
+			if (plannedAction) {
+				// Pre-planned: skip page capture and LLM call
+				action = plannedAction
+				trace?.log("plan:hit", JSON.stringify(action))
+			} else {
+				// Needs page state: capture a11y tree → ask LLM
+				trace?.log("capture:start")
+				let t0 = performance.now()
+				resetRefCounter()
+				const state = await capturePageState(page, options.consoleDrain)
+				timing.capture = performance.now() - t0
+				trace?.log("capture:done", `${String(Math.round(timing.capture))}ms`)
+
+				if (options.debug) {
+					console.log(`\n      A11y tree:\n`)
+					console.log(formatA11yTree(state.a11yTree))
+				}
+
+				trace?.log("llm:start")
+				t0 = performance.now()
+				action = await llm.resolveStep(step, state)
+				timing.llm = performance.now() - t0
+				trace?.log(
+					"llm:done",
+					`${String(Math.round(timing.llm))}ms → ${JSON.stringify(action)}`,
+				)
+
+				a11yTree = state.a11yTree
 			}
 
-			// Ask LLM to resolve the step
-			t0 = performance.now()
-			action = await llm.resolveStep(step, state)
-			timing.llm = performance.now() - t0
-
 			if (options.debug) {
-				console.log(`      LLM action: ${JSON.stringify(action)}`)
+				console.log(`      Action: ${JSON.stringify(action)}`)
 			}
 
 			// Execute the action
-			t0 = performance.now()
-			const result = await executeAction(page, action, state.a11yTree)
+			trace?.log("execute:start", action.action)
+			let t0 = performance.now()
+			const result = await executeAction(page, action, a11yTree)
 			timing.execute = performance.now() - t0
+			trace?.log(
+				"execute:done",
+				`${String(Math.round(timing.execute))}ms ${result.success ? "ok" : `FAIL: ${result.error ?? ""}`}`,
+			)
 
 			if (!result.success) {
 				stepResults.push({
@@ -90,15 +154,24 @@ export async function runTestCase(
 
 			// Capture post-action screenshot for reporting
 			// Retry once if the page is mid-navigation
+			trace?.log("postCapture:start")
 			t0 = performance.now()
 			let postState
 			try {
-				postState = await capturePageState(page, options.consoleDrain)
+				postState = await capturePageState(page, options.consoleDrain, {
+					screenshot: true,
+				})
 			} catch {
 				await page.waitForLoadState("domcontentloaded")
-				postState = await capturePageState(page, options.consoleDrain)
+				postState = await capturePageState(page, options.consoleDrain, {
+					screenshot: true,
+				})
 			}
 			timing.postCapture = performance.now() - t0
+			trace?.log(
+				"postCapture:done",
+				`${String(Math.round(timing.postCapture))}ms`,
+			)
 
 			stepResults.push({
 				step,
@@ -123,7 +196,7 @@ export async function runTestCase(
 
 	const allPassed = stepResults.every((s) => s.status === "passed")
 	const status =
-		allPassed && stepResults.length === testCase.steps.length
+		allPassed && stepResults.length === plan.length
 			? "passed"
 			: "failed"
 

@@ -20,8 +20,21 @@ export interface ChatMessage {
 	content: string
 }
 
+/** A single planned step: the display label and either a pre-resolved action or null. */
+export interface PlannedStep {
+	step: string
+	action: Action | null
+}
+
 /** The LLM client interface. */
 export interface LLMClient {
+	/**
+	 * Pre-plan all steps by sending the full test spec to the LLM.
+	 * The LLM interprets each step, potentially splitting compound steps
+	 * into multiple atomic actions. Returns a flat list of planned steps.
+	 */
+	planSteps(steps: string[]): Promise<PlannedStep[]>
+	/** Resolve a single step using the page state and a11y tree. */
 	resolveStep(step: string, pageState: PageState): Promise<Action>
 	/** Reset conversation history (call between test cases). */
 	resetHistory(): void
@@ -43,7 +56,9 @@ Available actions:
 - press: Press a keyboard key. Requires "value" (key name, e.g. "Enter", "Tab", "Escape").
 - wait: Wait for a condition. Requires "value" (description of what to wait for).
 - assert: Check a condition on the page. Requires "assertion" with "type" and "expected".
-  Assertion types: "contains_text", "not_contains_text", "url_contains", "element_visible", "element_not_visible", "link_exists".
+  Assertion types: "contains_text", "not_contains_text", "url_contains", "element_visible", "element_not_visible", "link_exists", "field_exists".
+
+IMPORTANT: Any step that starts with "check that" is ALWAYS an assertion. Never return a click, type, or other interaction for a "check that" step.
 
 Respond with ONLY a JSON object. No markdown, no explanation. Example responses:
 
@@ -56,68 +71,36 @@ Respond with ONLY a JSON object. No markdown, no explanation. Example responses:
 {"action":"scroll","value":"down"}
 `
 
-// ── Step patterns that can be resolved without an LLM call ──────────
+// ── Step planning prompt ─────────────────────────────────────────────
 
-const STEP_PATTERNS: {
-	pattern: RegExp
-	toAction: (m: RegExpMatchArray) => Action
-}[] = [
-	{
-		pattern: /^check that (?:the )?page contains "([^"]+)"$/i,
-		toAction: (m) => ({
-			action: "assert",
-			assertion: { type: "contains_text", expected: m[1] },
-		}),
-	},
-	{
-		pattern: /^check that (?:the )?page does not contain "([^"]+)"$/i,
-		toAction: (m) => ({
-			action: "assert",
-			assertion: { type: "not_contains_text", expected: m[1] },
-		}),
-	},
-	{
-		pattern: /^check that (?:the )?URL contains "([^"]+)"$/i,
-		toAction: (m) => ({
-			action: "assert",
-			assertion: { type: "url_contains", expected: m[1] },
-		}),
-	},
-	{
-		pattern: /^check that there is a link to ([^\s"]+|"[^"]+")$/i,
-		toAction: (m) => ({
-			action: "assert",
-			assertion: {
-				type: "link_exists",
-				expected: m[1].replace(/^"|"$/g, ""),
-			},
-		}),
-	},
-	{
-		pattern: /^press (\w+)$/i,
-		toAction: (m) => ({ action: "press", value: m[1] }),
-	},
-	{
-		pattern: /^go to "([^"]+)"$/i,
-		toAction: (m) => ({ action: "navigate", value: m[1] }),
-	},
-	{
-		pattern: /^scroll (up|down)$/i,
-		toAction: (m) => ({ action: "scroll", value: m[1].toLowerCase() }),
-	},
-]
+export const PLAN_SYSTEM_PROMPT = `We are processing a test description for an automated E2E testing tool.
 
-/**
- * Try to resolve a step from its text alone, without calling the LLM.
- * Returns the Action if matched, or undefined if the LLM is needed.
- */
-export function tryParseStep(step: string): Action | undefined {
-	for (const { pattern, toAction } of STEP_PATTERNS) {
-		const match = pattern.exec(step)
-		if (match) return toAction(match)
-	}
-	return undefined
-}
+It has a list of test steps in natural language that you should convert into actions using a simple line-based format. Output one line per action. A single input step may produce multiple output lines if it describes a sequence of actions.
+
+Action syntax (one per line):
+- PAGE "description" — needs the live page to resolve (click, type, select interactions). The description should be a clear, atomic instruction.
+- assert contains_text "text"
+- assert not_contains_text "text"
+- assert url_contains "text"
+- assert element_visible "text"
+- assert element_not_visible "text"
+- assert link_exists "href"
+- assert field_exists "label"
+- navigate "url"
+- press "key"
+- scroll "up|down"
+
+Rules:
+- Any step that says "check that" or "verify" or similar language is ALWAYS an assertion.
+- For assertions, preserve the FULL expected text exactly as written in the step. Never truncate or shorten it.
+- Steps that require seeing the page to identify interactive elements → PAGE with a description.
+- IMPORTANT: When a step lists multiple items separated by dashes, commas, or "then", each item is a SEPARATE action and must be output on its own line. 
+  For example, the input step "Select Red - Green - Blue in the color picker" must produce three lines:
+  PAGE "click Red in the color picker"
+  PAGE "click Green in the color picker"
+  PAGE "click Blue in the color picker"
+- No blank lines, no numbering, no explanation. Only action lines.
+`
 
 // ── Message construction ────────────────────────────────────────────
 
@@ -237,17 +220,57 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 	let history: ChatMessage[] = []
 	const cache = new Map<string, Action>()
 
+	async function chatCompletion(messages: ChatMessage[]): Promise<string> {
+		const response = await fetch(endpoint, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${config.apiKey}`,
+			},
+			body: JSON.stringify({
+				model: config.model,
+				messages,
+				temperature: 0,
+			}),
+		})
+
+		if (!response.ok) {
+			const body = await response.text()
+			throw new Error(`LLM API error ${String(response.status)}: ${body}`)
+		}
+
+		const data = (await response.json()) as {
+			choices: { message: { content: string } }[]
+		}
+
+		const content = data.choices[0]?.message?.content
+		if (!content) {
+			throw new Error("LLM returned empty response")
+		}
+
+		return content
+	}
+
 	return {
 		resetHistory() {
 			history = []
 		},
 
-		async resolveStep(step: string, pageState: PageState): Promise<Action> {
-			// Try to resolve without the LLM first
-			const parsed = tryParseStep(step)
-			if (parsed) return parsed
+		async planSteps(steps: string[]): Promise<PlannedStep[]> {
+			const userMessage = steps
+				.map((s, i) => `${String(i + 1)}. ${s}`)
+				.join("\n")
 
-			// Check cache: same step on same page state → same action
+			const content = await chatCompletion([
+				{ role: "system", content: PLAN_SYSTEM_PROMPT },
+				{ role: "user", content: userMessage },
+			])
+
+			return parsePlanResponse(content)
+		},
+
+		async resolveStep(step: string, pageState: PageState): Promise<Action> {
+			// Check cache: same step on same page → same action
 			const cacheKey = `${step}\0${pageState.url}`
 			const cached = cache.get(cacheKey)
 			if (cached) return cached
@@ -261,33 +284,7 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 				{ role: "user", content: userMessage },
 			]
 
-			const response = await fetch(endpoint, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${config.apiKey}`,
-				},
-				body: JSON.stringify({
-					model: config.model,
-					messages,
-					temperature: 0,
-				}),
-			})
-
-			if (!response.ok) {
-				const body = await response.text()
-				throw new Error(`LLM API error ${String(response.status)}: ${body}`)
-			}
-
-			const data = (await response.json()) as {
-				choices: { message: { content: string } }[]
-			}
-
-			const content = data.choices[0]?.message?.content
-			if (!content) {
-				throw new Error("LLM returned empty response")
-			}
-
+			const content = await chatCompletion(messages)
 			const action = parseActionResponse(content)
 
 			// Cache the result for identical future requests
@@ -302,4 +299,71 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 			return action
 		},
 	}
+}
+
+/**
+ * Parse a single action token from the plan response line format.
+ * Returns the action (or null for PAGE) and an optional description.
+ */
+function parsePlanAction(token: string): {
+	action: Action | null
+	description?: string
+} {
+	const t = token.trim()
+
+	// PAGE "description", PAGE description, or bare PAGE
+	if (/^page(?:\s|$)/i.test(t)) {
+		const after = t.slice(4).trim()
+		// Strip surrounding quotes if present
+		const description = after.replace(/^"(.*)"$/, "$1") || undefined
+		return { action: null, description }
+	}
+
+	// assert <type> "<expected>"
+	const assertMatch = /^assert\s+(\S+)\s+"([^"]*)"$/i.exec(t)
+	if (assertMatch) {
+		return {
+			action: {
+				action: "assert",
+				assertion: { type: assertMatch[1], expected: assertMatch[2] },
+			},
+		}
+	}
+
+	// navigate "<url>"
+	const navMatch = /^navigate\s+"([^"]*)"$/i.exec(t)
+	if (navMatch) {
+		return { action: { action: "navigate", value: navMatch[1] } }
+	}
+
+	// press "<key>"
+	const pressMatch = /^press\s+"([^"]*)"$/i.exec(t)
+	if (pressMatch) {
+		return { action: { action: "press", value: pressMatch[1] } }
+	}
+
+	// scroll "<direction>"
+	const scrollMatch = /^scroll\s+"([^"]*)"$/i.exec(t)
+	if (scrollMatch) {
+		return { action: { action: "scroll", value: scrollMatch[1].toLowerCase() } }
+	}
+
+	// Unknown token — treat as page-dependent
+	return { action: null }
+}
+
+/**
+ * Parse the planning LLM response (line-based format) into a flat list of PlannedSteps.
+ * One line per action — compound input steps produce multiple lines.
+ */
+export function parsePlanResponse(raw: string): PlannedStep[] {
+	return raw
+		.trim()
+		.split("\n")
+		.filter((l) => l.trim().length > 0)
+		.map((line) => {
+			const { action, description } = parsePlanAction(line)
+			const step = description ?? line.trim()
+			return { step, action }
+		})
 }

@@ -15,6 +15,7 @@ import {
 import { attachConsoleCollector } from "../pilot/state.js"
 import { resolveLLMConfig, createLLMClient } from "../pilot/llm.js"
 import { runTestCase } from "../pilot/pilot.js"
+import { createTraceLogger } from "../pilot/trace.js"
 import { resolve } from "node:path"
 import { glob } from "node:fs"
 
@@ -49,6 +50,11 @@ program
 		"select a named deployment from greenlight.yaml",
 	)
 	.option("--debug", "enable verbose debug output", false)
+	.option(
+		"--trace",
+		"log timestamped browser events for performance analysis",
+		false,
+	)
 	.action(
 		async (
 			suitesArg: string[],
@@ -64,6 +70,7 @@ program
 				llmBaseUrl?: string
 				deployment?: string
 				debug: boolean
+				trace: boolean
 			},
 		) => {
 			// Load project config (greenlight.yaml)
@@ -168,6 +175,8 @@ program
 					process.exit(1)
 				}
 
+				const trace = createTraceLogger(opts.trace)
+
 				try {
 					// Filter tests
 					const tests = config.testFilter
@@ -181,8 +190,10 @@ program
 						const context = await createContext(browser, browserOpts)
 						const page = await createPage(context)
 						const { drain } = attachConsoleCollector(page)
+						trace.attachToPage(page)
 
 						try {
+							trace.log("goto", suite.base_url)
 							await page.goto(suite.base_url)
 						} catch (err) {
 							const msg = err instanceof Error ? err.message : String(err)
@@ -197,6 +208,7 @@ program
 							timeout: config.timeout,
 							consoleDrain: drain,
 							debug: opts.debug,
+							trace,
 						})
 
 						// Print step-by-step results
@@ -234,6 +246,7 @@ program
 							await new Promise((r) => setTimeout(r, 2000))
 						}
 
+						trace.detachFromPage(page)
 						await context.close()
 					}
 				} finally {

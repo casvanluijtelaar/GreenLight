@@ -336,7 +336,8 @@ async function executeAssertion(
 	const shouldPoll =
 		assertion.type === "contains_text" ||
 		assertion.type === "element_visible" ||
-		assertion.type === "link_exists"
+		assertion.type === "link_exists" ||
+		assertion.type === "field_exists"
 
 	if (shouldPoll) {
 		await pollAssertion(check)
@@ -409,6 +410,20 @@ function buildAssertionCheck(
 				if (count === 0) {
 					throw new Error(
 						`No link found with href matching "${assertion.expected}"`,
+					)
+				}
+				break
+			}
+
+			case "field_exists": {
+				// Check for a form field by label, placeholder, or aria-label
+				const byLabel = page.getByLabel(assertion.expected)
+				const byPlaceholder = page.getByPlaceholder(assertion.expected)
+				const labelCount = await byLabel.count()
+				const placeholderCount = await byPlaceholder.count()
+				if (labelCount === 0 && placeholderCount === 0) {
+					throw new Error(
+						`No form field found matching "${assertion.expected}"`,
 					)
 				}
 				break

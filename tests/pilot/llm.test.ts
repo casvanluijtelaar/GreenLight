@@ -3,10 +3,10 @@ import {
 	buildUserMessage,
 	buildMessages,
 	parseActionResponse,
+	parsePlanResponse,
 	resolveApiKey,
 	resolveLLMConfig,
 	createLLMClient,
-	tryParseStep,
 	SYSTEM_PROMPT,
 } from "../../src/pilot/llm.js"
 import type { PageState } from "../../src/reporter/types.js"
@@ -301,8 +301,20 @@ describe("createLLMClient", () => {
 		expect(fetchCall[0]).toBe("https://openrouter.ai/api/v1/chat/completions")
 	})
 
-	it("skips LLM for steps resolved by tryParseStep", async () => {
-		globalThis.fetch = vi.fn()
+	it("planSteps sends all steps and parses response", async () => {
+		const planText = [
+			'PAGE "click Sign In"',
+			'assert contains_text "Welcome"',
+			'navigate "/about"',
+			'PAGE "type hello into the search field"',
+		].join("\n")
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: () =>
+				Promise.resolve({
+					choices: [{ message: { content: planText } }],
+				}),
+		})
 
 		const client = createLLMClient({
 			apiKey: "sk-test",
@@ -310,15 +322,25 @@ describe("createLLMClient", () => {
 			model: "test-model",
 		})
 
-		const action = await client.resolveStep(
-			'check that page contains "Hello"',
-			mockPageState,
-		)
-		expect(action).toEqual({
+		const plan = await client.planSteps([
+			'click "Sign In"',
+			'check that the page contains "Welcome"',
+			'go to "/about"',
+			'type "hello" into the search field',
+		])
+
+		expect(plan).toHaveLength(4)
+		expect(plan[0]).toEqual({ step: "click Sign In", action: null })
+		expect(plan[1].action).toEqual({
 			action: "assert",
-			assertion: { type: "contains_text", expected: "Hello" },
+			assertion: { type: "contains_text", expected: "Welcome" },
 		})
-		expect(fetch).not.toHaveBeenCalled()
+		expect(plan[2].action).toEqual({
+			action: "navigate",
+			value: "/about",
+		})
+		expect(plan[3].action).toBeNull()
+		expect(fetch).toHaveBeenCalledTimes(1)
 	})
 
 	it("accumulates conversation history across calls", async () => {
@@ -454,86 +476,93 @@ describe("createLLMClient", () => {
 	})
 })
 
-describe("tryParseStep", () => {
-	it("parses contains_text assertion", () => {
-		const action = tryParseStep('check that page contains "Welcome"')
-		expect(action).toEqual({
-			action: "assert",
-			assertion: { type: "contains_text", expected: "Welcome" },
+describe("parsePlanResponse", () => {
+	it("parses one action per line", () => {
+		const raw = [
+			'PAGE "search for tern"',
+			'assert contains_text "Hello"',
+			'navigate "/about"',
+			'press "Enter"',
+		].join("\n")
+		const result = parsePlanResponse(raw)
+		expect(result).toHaveLength(4)
+		expect(result[0]).toEqual({ step: "search for tern", action: null })
+		expect(result[1]).toEqual({
+			step: 'assert contains_text "Hello"',
+			action: {
+				action: "assert",
+				assertion: { type: "contains_text", expected: "Hello" },
+			},
+		})
+		expect(result[2]).toEqual({
+			step: 'navigate "/about"',
+			action: { action: "navigate", value: "/about" },
+		})
+		expect(result[3]).toEqual({
+			step: 'press "Enter"',
+			action: { action: "press", value: "Enter" },
 		})
 	})
 
-	it("parses not_contains_text assertion", () => {
-		const action = tryParseStep('check that page does not contain "Error"')
-		expect(action).toEqual({
-			action: "assert",
-			assertion: { type: "not_contains_text", expected: "Error" },
-		})
+	it("handles compound steps split into multiple lines", () => {
+		const raw = [
+			'PAGE "click Företag in the form"',
+			'PAGE "click Ventilation in the form"',
+			'PAGE "click Kylteknik in the form"',
+		].join("\n")
+		const result = parsePlanResponse(raw)
+		expect(result).toHaveLength(3)
+		expect(result[0].step).toBe("click Företag in the form")
+		expect(result[1].step).toBe("click Ventilation in the form")
+		expect(result[2].step).toBe("click Kylteknik in the form")
+		expect(result.every((r) => r.action === null)).toBe(true)
 	})
 
-	it("parses url_contains assertion", () => {
-		const action = tryParseStep('check that URL contains "/dashboard"')
-		expect(action).toEqual({
-			action: "assert",
-			assertion: { type: "url_contains", expected: "/dashboard" },
-		})
+	it("uses raw line as step label for non-PAGE actions", () => {
+		const result = parsePlanResponse('assert field_exists "Email"')
+		expect(result[0].step).toBe('assert field_exists "Email"')
 	})
 
-	it("parses press action", () => {
-		expect(tryParseStep("press Enter")).toEqual({
-			action: "press",
-			value: "Enter",
-		})
-	})
-
-	it("parses go to action", () => {
-		expect(tryParseStep('go to "/products"')).toEqual({
-			action: "navigate",
-			value: "/products",
-		})
+	it("parses all assertion types", () => {
+		const raw = [
+			'assert contains_text "Hello"',
+			'assert not_contains_text "Error"',
+			'assert url_contains "/home"',
+			'assert element_visible "Banner"',
+			'assert element_not_visible "Spinner"',
+			'assert link_exists "/"',
+			'assert field_exists "Email"',
+		].join("\n")
+		const result = parsePlanResponse(raw)
+		expect(result[0].action?.assertion?.type).toBe("contains_text")
+		expect(result[1].action?.assertion?.type).toBe("not_contains_text")
+		expect(result[2].action?.assertion?.type).toBe("url_contains")
+		expect(result[3].action?.assertion?.type).toBe("element_visible")
+		expect(result[4].action?.assertion?.type).toBe("element_not_visible")
+		expect(result[5].action?.assertion?.type).toBe("link_exists")
+		expect(result[6].action?.assertion?.type).toBe("field_exists")
 	})
 
 	it("parses scroll action", () => {
-		expect(tryParseStep("scroll down")).toEqual({
-			action: "scroll",
-			value: "down",
-		})
+		const result = parsePlanResponse('scroll "down"')
+		expect(result[0].action).toEqual({ action: "scroll", value: "down" })
 	})
 
-	it("parses assertions with optional 'the'", () => {
-		expect(tryParseStep('check that the page contains "Hello"')).toEqual({
-			action: "assert",
-			assertion: { type: "contains_text", expected: "Hello" },
-		})
-		expect(
-			tryParseStep('check that the page does not contain "Error"'),
-		).toEqual({
-			action: "assert",
-			assertion: { type: "not_contains_text", expected: "Error" },
-		})
-		expect(tryParseStep('check that the URL contains "/home"')).toEqual({
-			action: "assert",
-			assertion: { type: "url_contains", expected: "/home" },
-		})
+	it("parses PAGE with unquoted description", () => {
+		const result = parsePlanResponse('PAGE click the Sign In button')
+		expect(result[0].action).toBeNull()
+		expect(result[0].step).toBe("click the Sign In button")
 	})
 
-	it("parses link_exists assertion", () => {
-		expect(tryParseStep("check that there is a link to /")).toEqual({
-			action: "assert",
-			assertion: { type: "link_exists", expected: "/" },
-		})
-		expect(
-			tryParseStep('check that there is a link to "/products"'),
-		).toEqual({
-			action: "assert",
-			assertion: { type: "link_exists", expected: "/products" },
-		})
+	it("treats unrecognized tokens as PAGE without description", () => {
+		const result = parsePlanResponse("something weird")
+		expect(result[0].action).toBeNull()
+		expect(result[0].step).toBe("something weird")
 	})
 
-	it("returns undefined for steps that need LLM", () => {
-		expect(tryParseStep('click "Sign In"')).toBeUndefined()
-		expect(
-			tryParseStep('enter "test@example.com" into "Email"'),
-		).toBeUndefined()
+	it("ignores blank lines", () => {
+		const raw = 'PAGE "click A"\n\nPAGE "click B"\n'
+		const result = parsePlanResponse(raw)
+		expect(result).toHaveLength(2)
 	})
 })

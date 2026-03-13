@@ -29,21 +29,28 @@ export function attachConsoleCollector(page: Page): {
 }
 
 /**
- * Capture the full page state: a11y tree, screenshot, URL, title, console logs.
+ * Capture the page state: a11y tree, URL, title, console logs.
+ * Screenshots are optional — skip them on pre-action captures to avoid
+ * triggering lazy-loaded elements (e.g. IntersectionObserver-based maps).
  */
 export async function capturePageState(
 	page: Page,
 	consoleDrain: () => ConsoleEntry[],
+	options?: { screenshot?: boolean },
 ): Promise<PageState> {
+	const takeScreenshot = options?.screenshot ?? false
+
 	const [a11yRaw, screenshotBuffer, url, title] = await Promise.all([
 		page.locator("body").ariaSnapshot(),
-		page.screenshot({ type: "png" }),
+		takeScreenshot ? page.screenshot({ type: "png" }) : Promise.resolve(null),
 		Promise.resolve(page.url()),
 		page.title(),
 	])
 
 	const a11yTree = parseA11ySnapshot(a11yRaw)
-	const screenshot = screenshotBuffer.toString("base64")
+	const screenshot = screenshotBuffer
+		? screenshotBuffer.toString("base64")
+		: undefined
 	const consoleLogs = consoleDrain()
 
 	return { a11yTree, a11yRaw, screenshot, url, title, consoleLogs }
@@ -216,9 +223,7 @@ export function formatA11yTree(nodes: A11yNode[], indent = 0): string {
 		const levelStr = node.level != null ? ` [level=${String(node.level)}]` : ""
 		const urlStr = node.url ? ` → ${node.url}` : ""
 
-		lines.push(
-			`${prefix}${refLabel}${node.role}${nameStr}${levelStr}${urlStr}`,
-		)
+		lines.push(`${prefix}${refLabel}${node.role}${nameStr}${levelStr}${urlStr}`)
 
 		if (node.children) {
 			lines.push(formatA11yTree(node.children, indent + 1))

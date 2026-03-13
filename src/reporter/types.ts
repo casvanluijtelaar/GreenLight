@@ -19,8 +19,8 @@ export interface PageState {
 	a11yTree: A11yNode[]
 	/** Raw aria snapshot text from Playwright. */
 	a11yRaw: string
-	/** Base64-encoded PNG screenshot of the viewport. */
-	screenshot: string
+	/** Base64-encoded PNG screenshot of the viewport (only on post-action captures). */
+	screenshot?: string
 	/** Current page URL. */
 	url: string
 	/** Current page title. */

@@ -7,7 +7,7 @@ import {
 } from "../../src/browser/browser.js"
 import { attachConsoleCollector } from "../../src/pilot/state.js"
 import { runTestCase } from "../../src/pilot/pilot.js"
-import type { LLMClient } from "../../src/pilot/llm.js"
+import type { LLMClient, PlannedStep } from "../../src/pilot/llm.js"
 import type { Action, PageState } from "../../src/reporter/types.js"
 import { DEFAULTS } from "../../src/types.js"
 
@@ -26,6 +26,10 @@ function makeMockLLM(actions: Action[]): LLMClient {
 	let callIndex = 0
 	return {
 		resetHistory: vi.fn(),
+		planSteps: vi.fn(async (steps: string[]): Promise<PlannedStep[]> => {
+			// Mock planner returns null for all steps (runtime resolution)
+			return steps.map((s) => ({ step: s, action: null }))
+		}),
 		resolveStep: vi.fn(async (_step: string, _state: PageState) => {
 			const action = actions[callIndex]
 			callIndex++
@@ -180,6 +184,10 @@ describe("runTestCase", () => {
 		await withPage(async (page, drain) => {
 			const llm: LLMClient = {
 				resetHistory: vi.fn(),
+				planSteps: vi.fn(
+					async (steps: string[]): Promise<PlannedStep[]> =>
+						steps.map((s) => ({ step: s, action: null })),
+				),
 				resolveStep: vi.fn(async () => {
 					throw new Error("LLM API error 500: Internal Server Error")
 				}),
