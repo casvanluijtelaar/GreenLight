@@ -117,7 +117,7 @@ describe("runTestCase", () => {
 		})
 	})
 
-	it("fails on assertion failure", async () => {
+	it("fails on assertion failure", { timeout: 10000 }, async () => {
 		await withPage(async (page, drain) => {
 			const llm = makeMockLLM([
 				{

@@ -500,6 +500,36 @@ describe("tryParseStep", () => {
 		})
 	})
 
+	it("parses assertions with optional 'the'", () => {
+		expect(tryParseStep('check that the page contains "Hello"')).toEqual({
+			action: "assert",
+			assertion: { type: "contains_text", expected: "Hello" },
+		})
+		expect(
+			tryParseStep('check that the page does not contain "Error"'),
+		).toEqual({
+			action: "assert",
+			assertion: { type: "not_contains_text", expected: "Error" },
+		})
+		expect(tryParseStep('check that the URL contains "/home"')).toEqual({
+			action: "assert",
+			assertion: { type: "url_contains", expected: "/home" },
+		})
+	})
+
+	it("parses link_exists assertion", () => {
+		expect(tryParseStep("check that there is a link to /")).toEqual({
+			action: "assert",
+			assertion: { type: "link_exists", expected: "/" },
+		})
+		expect(
+			tryParseStep('check that there is a link to "/products"'),
+		).toEqual({
+			action: "assert",
+			assertion: { type: "link_exists", expected: "/products" },
+		})
+	})
+
 	it("returns undefined for steps that need LLM", () => {
 		expect(tryParseStep('click "Sign In"')).toBeUndefined()
 		expect(

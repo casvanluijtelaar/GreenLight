@@ -43,7 +43,7 @@ Available actions:
 - press: Press a keyboard key. Requires "value" (key name, e.g. "Enter", "Tab", "Escape").
 - wait: Wait for a condition. Requires "value" (description of what to wait for).
 - assert: Check a condition on the page. Requires "assertion" with "type" and "expected".
-  Assertion types: "contains_text", "not_contains_text", "url_contains", "element_visible", "element_not_visible".
+  Assertion types: "contains_text", "not_contains_text", "url_contains", "element_visible", "element_not_visible", "link_exists".
 
 Respond with ONLY a JSON object. No markdown, no explanation. Example responses:
 
@@ -63,24 +63,34 @@ const STEP_PATTERNS: {
 	toAction: (m: RegExpMatchArray) => Action
 }[] = [
 	{
-		pattern: /^check that page contains "([^"]+)"$/i,
+		pattern: /^check that (?:the )?page contains "([^"]+)"$/i,
 		toAction: (m) => ({
 			action: "assert",
 			assertion: { type: "contains_text", expected: m[1] },
 		}),
 	},
 	{
-		pattern: /^check that page does not contain "([^"]+)"$/i,
+		pattern: /^check that (?:the )?page does not contain "([^"]+)"$/i,
 		toAction: (m) => ({
 			action: "assert",
 			assertion: { type: "not_contains_text", expected: m[1] },
 		}),
 	},
 	{
-		pattern: /^check that URL contains "([^"]+)"$/i,
+		pattern: /^check that (?:the )?URL contains "([^"]+)"$/i,
 		toAction: (m) => ({
 			action: "assert",
 			assertion: { type: "url_contains", expected: m[1] },
+		}),
+	},
+	{
+		pattern: /^check that there is a link to ([^\s"]+|"[^"]+")$/i,
+		toAction: (m) => ({
+			action: "assert",
+			assertion: {
+				type: "link_exists",
+				expected: m[1].replace(/^"|"$/g, ""),
+			},
 		}),
 	},
 	{

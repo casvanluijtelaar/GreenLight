@@ -247,9 +247,7 @@ export async function executeAction(
 					throw new Error("press action requires a value")
 				}
 				const key = action.value
-				await runWithNavigationHandling(page, () =>
-					page.keyboard.press(key),
-				)
+				await runWithNavigationHandling(page, () => page.keyboard.press(key))
 				break
 			}
 
@@ -299,62 +297,125 @@ export async function executeAction(
 }
 
 /**
+ * Poll an assertion until it passes or the timeout expires.
+ * This handles cases where the page is still updating (e.g. dropdown
+ * appearing after typing, navigation completing, etc.).
+ */
+async function pollAssertion(
+	check: () => Promise<void>,
+	timeoutMs = 5000,
+): Promise<void> {
+	const deadline = performance.now() + timeoutMs
+	let lastError: Error = new Error("Assertion timed out")
+	while (performance.now() < deadline) {
+		try {
+			await check()
+			return
+		} catch (err) {
+			lastError = err instanceof Error ? err : new Error(String(err))
+		}
+		await new Promise((r) => setTimeout(r, 250))
+	}
+	throw lastError
+}
+
+/**
  * Execute an assertion against the current page state.
+ * Positive assertions (checking something exists/appears) are polled with
+ * a timeout to handle async page updates (dropdowns, navigation, etc.).
+ * Negative assertions (checking something is absent) run once immediately.
  */
 async function executeAssertion(
 	page: Page,
 	assertion: { type: string; expected: string },
 ): Promise<void> {
-	switch (assertion.type) {
-		case "contains_text": {
-			const body = await page.locator("body").textContent()
-			if (!body?.toLowerCase().includes(assertion.expected.toLowerCase())) {
-				throw new Error(`Page does not contain text: "${assertion.expected}"`)
-			}
-			break
-		}
+	const check = buildAssertionCheck(page, assertion)
 
-		case "not_contains_text": {
-			const bodyText = await page.locator("body").textContent()
-			if (
-				bodyText?.toLowerCase().includes(assertion.expected.toLowerCase())
-			) {
-				throw new Error(
-					`Page contains text it should not: "${assertion.expected}"`,
+	// Positive assertions benefit from polling (content may still be loading).
+	// Negative assertions and URL checks should fail immediately.
+	const shouldPoll =
+		assertion.type === "contains_text" ||
+		assertion.type === "element_visible" ||
+		assertion.type === "link_exists"
+
+	if (shouldPoll) {
+		await pollAssertion(check)
+	} else {
+		await check()
+	}
+}
+
+function buildAssertionCheck(
+	page: Page,
+	assertion: { type: string; expected: string },
+): () => Promise<void> {
+	return async () => {
+		switch (assertion.type) {
+			case "contains_text": {
+				const body = await page.locator("body").textContent()
+				if (!body?.toLowerCase().includes(assertion.expected.toLowerCase())) {
+					throw new Error(`Page does not contain text: "${assertion.expected}"`)
+				}
+				break
+			}
+
+			case "not_contains_text": {
+				const bodyText = await page.locator("body").textContent()
+				if (
+					bodyText?.toLowerCase().includes(assertion.expected.toLowerCase())
+				) {
+					throw new Error(
+						`Page contains text it should not: "${assertion.expected}"`,
+					)
+				}
+				break
+			}
+
+			case "url_contains": {
+				const url = page.url()
+				if (!url.includes(assertion.expected)) {
+					throw new Error(
+						`URL "${url}" does not contain "${assertion.expected}"`,
+					)
+				}
+				break
+			}
+
+			case "element_visible": {
+				const visible = await page.getByText(assertion.expected).isVisible()
+				if (!visible) {
+					throw new Error(
+						`Element with text "${assertion.expected}" is not visible`,
+					)
+				}
+				break
+			}
+
+			case "element_not_visible": {
+				const visible = await page.getByText(assertion.expected).isVisible()
+				if (visible) {
+					throw new Error(
+						`Element with text "${assertion.expected}" is still visible`,
+					)
+				}
+				break
+			}
+
+			case "link_exists": {
+				const link = page.locator(
+					`a[href="${assertion.expected}"], a[href$="${assertion.expected}"]`,
 				)
+				const count = await link.count()
+				if (count === 0) {
+					throw new Error(
+						`No link found with href matching "${assertion.expected}"`,
+					)
+				}
+				break
 			}
-			break
-		}
 
-		case "url_contains": {
-			const url = page.url()
-			if (!url.includes(assertion.expected)) {
-				throw new Error(`URL "${url}" does not contain "${assertion.expected}"`)
-			}
-			break
+			default:
+				throw new Error(`Unknown assertion type: ${assertion.type}`)
 		}
-
-		case "element_visible": {
-			const visible = await page.getByText(assertion.expected).isVisible()
-			if (!visible) {
-				throw new Error(
-					`Element with text "${assertion.expected}" is not visible`,
-				)
-			}
-			break
-		}
-
-		case "element_not_visible": {
-			const visible = await page.getByText(assertion.expected).isVisible()
-			if (visible) {
-				throw new Error(
-					`Element with text "${assertion.expected}" is still visible`,
-				)
-			}
-			break
-		}
-
-		default:
-			throw new Error(`Unknown assertion type: ${assertion.type}`)
 	}
 }

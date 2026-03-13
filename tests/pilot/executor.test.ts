@@ -213,7 +213,7 @@ describe("executeAction with real browser", () => {
 		})
 	})
 
-	it("executes a contains_text assertion (fail)", async () => {
+	it("executes a contains_text assertion (fail)", { timeout: 10000 }, async () => {
 		await withPage(async (page) => {
 			const action: Action = {
 				action: "assert",
