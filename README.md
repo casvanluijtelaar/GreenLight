@@ -53,6 +53,23 @@ greenlight run --llm-base-url <url>   # use a different OpenAI-compatible API
 greenlight run --debug                # verbose output (a11y tree, screenshots, logs)
 ```
 
+## GreenLight philosopy compared to Gherkin/Cucumber
+
+Traditional BDD tools like Cucumber use **Gherkin** — a structured `Given/When/Then` syntax where every step requires a developer-written **step definition** (glue code) that maps the English phrase to actual browser automation with CSS selectors or XPaths.
+
+GreenLight takes a different approach:
+
+| | GreenLight | Gherkin (Cucumber) |
+|---|---|---|
+| **Test language** | Freeform plain English | Structured `Given/When/Then` keywords |
+| **Element targeting** | AI resolves via accessibility tree + vision — no selectors | Developers write glue code with selectors/XPaths |
+| **Maintenance** | Tests survive UI refactors that don't change behavior | Selector changes break tests, requiring glue code updates |
+| **Authoring** | Non-technical testers, no code required | Readable specs, but developers must write step definitions |
+| **Determinism** | AI-based — small variability (<5% flake target) | Fully deterministic — same input, same execution path |
+| **Maturity** | New, LLM-dependent | Battle-tested (15+ years), broad ecosystem |
+
+**In short:** Gherkin requires developers to bridge English and browser automation via step definitions. GreenLight uses AI as that bridge — eliminating the glue code layer at the cost of introducing LLM-dependent variability.
+
 ## Test syntax
 
 Tests are plain English. The Pilot interprets intent, so phrasing is flexible. Common patterns:
