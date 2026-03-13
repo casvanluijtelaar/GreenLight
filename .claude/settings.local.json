@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:testrigor.com)",
+      "WebSearch",
+      "WebFetch(domain:support.testrigor.com)"
+    ]
+  }
+}
