@@ -16,6 +16,7 @@ import type { LLMClient, PlannedStep } from "./llm.js"
 import { capturePageState, resetRefCounter, formatA11yTree } from "./state.js"
 import { executeAction } from "./executor.js"
 import type { TraceLogger } from "./trace.js"
+import type { PlanRecorder } from "../planner/plan-generator.js"
 
 export interface PilotOptions {
 	/** Per-step timeout in ms. */
@@ -26,6 +27,8 @@ export interface PilotOptions {
 	debug: boolean
 	/** Optional trace logger for performance analysis. */
 	trace?: TraceLogger
+	/** Optional plan recorder for capturing heuristic plans during discovery. */
+	recorder?: PlanRecorder
 }
 
 /**
@@ -45,6 +48,7 @@ export async function runTestCase(
 	llm.resetHistory()
 
 	const trace = options.trace
+	const recorder = options.recorder
 
 	// Pre-plan all steps: the LLM interprets the full spec and returns
 	// structured actions for steps it can resolve without page state.
@@ -172,6 +176,14 @@ export async function runTestCase(
 				"postCapture:done",
 				`${String(Math.round(timing.postCapture))}ms`,
 			)
+
+			// Record step for heuristic plan if recorder is active
+			if (recorder && action) {
+				recorder.recordStep(step, action, result, {
+					url: postState.url,
+					title: postState.title,
+				})
+			}
 
 			stepResults.push({
 				step,

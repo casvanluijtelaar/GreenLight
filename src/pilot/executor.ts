@@ -3,7 +3,12 @@
  */
 
 import type { Page, Locator } from "playwright"
-import type { Action, A11yNode, ExecutionResult } from "../reporter/types.js"
+import type {
+	Action,
+	A11yNode,
+	ExecutionResult,
+	ResolvedSelector,
+} from "../reporter/types.js"
 
 /**
  * Find an A11yNode by its ref ID, searching the tree recursively.
@@ -195,12 +200,75 @@ async function resolveActionTarget(
 }
 
 /**
+ * Extract a CSS selector from a resolved Playwright locator.
+ * Evaluates in-browser to build a unique path-based selector.
+ */
+async function extractCssSelector(
+	locator: Locator,
+): Promise<string | undefined> {
+	try {
+		return await locator.evaluate((el: Element) => {
+			const escape = (s: string) => CSS.escape(s)
+			if (el.id) return "#" + escape(el.id)
+			const parts: string[] = []
+			let current: Element | null = el
+			while (
+				current &&
+				current !== document.body &&
+				current !== document.documentElement
+			) {
+				let sel = current.tagName.toLowerCase()
+				if (current.id) {
+					parts.unshift("#" + escape(current.id))
+					break
+				}
+				const parent = current.parentElement
+				if (parent) {
+					const sameTag = Array.from(parent.children).filter(
+						(c) => c.tagName === current!.tagName,
+					)
+					if (sameTag.length > 1) {
+						sel += `:nth-of-type(${String(sameTag.indexOf(current!) + 1)})`
+					}
+				}
+				parts.unshift(sel)
+				current = current.parentElement
+			}
+			return parts.join(" > ")
+		})
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * Extract selector info from a resolved action for the plan recorder.
+ * For ref-based actions: returns role + name from the a11y node.
+ * For text-based actions: extracts a CSS selector from the DOM element.
+ */
+async function extractSelectorInfo(
+	action: Action,
+	a11yTree: A11yNode[],
+	locator: Locator,
+): Promise<ResolvedSelector | undefined> {
+	if (action.ref) {
+		const node = findNodeByRef(a11yTree, action.ref)
+		if (node) return { role: node.role, name: node.name }
+	}
+	if (action.text) {
+		const css = await extractCssSelector(locator)
+		if (css) return { css }
+	}
+	return undefined
+}
+
+/**
  * Run an action that might trigger navigation.
  * Listens for a 'framenavigated' event during the action — if one fires,
  * waits for the new page to reach domcontentloaded. If no navigation
  * happens, returns immediately with no delay.
  */
-async function runWithNavigationHandling(
+export async function runWithNavigationHandling(
 	page: Page,
 	action: () => Promise<void>,
 ): Promise<void> {
@@ -231,11 +299,17 @@ export async function executeAction(
 	a11yTree: A11yNode[],
 ): Promise<ExecutionResult> {
 	const start = performance.now()
+	let resolvedSelector: ResolvedSelector | undefined
 
 	try {
 		switch (action.action) {
 			case "click": {
 				const locator = await resolveActionTarget(page, action, a11yTree)
+				resolvedSelector = await extractSelectorInfo(
+					action,
+					a11yTree,
+					locator,
+				)
 				await runWithNavigationHandling(page, () => locator.click())
 				break
 			}
@@ -245,6 +319,11 @@ export async function executeAction(
 					throw new Error("type action requires a value")
 				}
 				const locator = await resolveActionTarget(page, action, a11yTree)
+				resolvedSelector = await extractSelectorInfo(
+					action,
+					a11yTree,
+					locator,
+				)
 				// Click the target to focus/activate it (may open an input overlay).
 				// Use navigation handling in case the click triggers a page change.
 				await runWithNavigationHandling(page, () => locator.click())
@@ -261,6 +340,11 @@ export async function executeAction(
 					throw new Error("select action requires a value")
 				}
 				const locator = await resolveActionTarget(page, action, a11yTree)
+				resolvedSelector = await extractSelectorInfo(
+					action,
+					a11yTree,
+					locator,
+				)
 				await locator.selectOption({ label: action.value })
 				break
 			}
@@ -268,6 +352,11 @@ export async function executeAction(
 			case "scroll": {
 				if (action.ref) {
 					const locator = await resolveLocator(page, a11yTree, action.ref)
+					resolvedSelector = await extractSelectorInfo(
+						action,
+						a11yTree,
+						locator,
+					)
 					await locator.scrollIntoViewIfNeeded()
 				} else {
 					const delta = action.value === "up" ? -500 : 500
@@ -320,12 +409,14 @@ export async function executeAction(
 		return {
 			success: true,
 			duration: performance.now() - start,
+			resolvedSelector,
 		}
 	} catch (err) {
 		return {
 			success: false,
 			duration: performance.now() - start,
 			error: err instanceof Error ? err.message : String(err),
+			resolvedSelector,
 		}
 	}
 }

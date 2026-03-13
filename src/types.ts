@@ -32,6 +32,10 @@ export interface RunConfig {
 	model: string
 	/** Base URL for the OpenAI-compatible LLM API. */
 	llmBaseUrl: string
+	/** Force a full discovery run, ignoring cached plans. */
+	discover: boolean
+	/** Behavior on plan drift: "fail" (default) or "rerun" with LLM. */
+	onDrift: "fail" | "rerun"
 }
 
 /** Default configuration values. */
@@ -44,6 +48,8 @@ export const DEFAULTS: Pick<
 	| "viewport"
 	| "model"
 	| "llmBaseUrl"
+	| "discover"
+	| "onDrift"
 > = {
 	reporter: "cli",
 	headed: false,
@@ -52,4 +58,6 @@ export const DEFAULTS: Pick<
 	viewport: { width: 1280, height: 720 },
 	model: "anthropic/claude-sonnet-4",
 	llmBaseUrl: "https://openrouter.ai/api/v1",
+	discover: false,
+	onDrift: "fail",
 }

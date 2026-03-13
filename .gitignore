@@ -25,6 +25,9 @@ results.json
 report.html
 .playwright-cli/
 
+# GreenLight cached plans
+.greenlight/
+
 # Logs
 *.log
 npm-debug.log*

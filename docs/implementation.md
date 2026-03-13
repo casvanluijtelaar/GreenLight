@@ -293,11 +293,13 @@ OPENROUTER_API_KEY=sk-... npx greenlight run examples/demo.yaml --trace
 **What to implement:**
 
 1. `plan-types.ts`:
-   - `HeuristicStep`: `{ originalStep: string, action: string, selector: { role, name, exact? }, value?: string, assertion?: { type, selector, expected }, postStepFingerprint: { url, title, keyElements: string[] } }`.
-   - `HeuristicPlan`: `{ suiteSlug: string, testSlug: string, sourceHash: string, model: string, generatedAt: string, greenlightVersion: string, steps: HeuristicStep[] }`.
+   - `HeuristicSelector`: `{ role?, name?, css? }` — for a11y-tree elements stores role+name; for text-based fallback stores a CSS DOM selector extracted from the element.
+   - `HeuristicStep`: `{ originalStep, action, selector?, value?, assertion?, postStepFingerprint: { url, title } }`.
+   - `HeuristicPlan`: `{ suiteSlug, testSlug, sourceHash, model, generatedAt, greenlightVersion, steps }`.
 
 2. `hasher.ts`:
-   - `computeTestHash(testCase, suiteVariables, reusableSteps): string` — takes the fully resolved test case (after variable interpolation and reusable step expansion), serializes it deterministically, and returns its SHA-256 hash.
+   - `computeTestHash(testCase: { steps: string[] }): string` — JSON-serializes the resolved steps array and returns its SHA-256 hash.
+   - `slugify(name): string` — converts a name to kebab-case for filesystem-safe paths.
 
 3. `plan-store.ts`:
    - `loadHashIndex(projectRoot): Record<string, string>` — reads `.greenlight/hashes.json`.
@@ -305,36 +307,46 @@ OPENROUTER_API_KEY=sk-... npx greenlight run examples/demo.yaml --trace
    - `loadPlan(projectRoot, suiteSlug, testSlug): HeuristicPlan | null` — reads a cached plan file.
    - `savePlan(projectRoot, plan)` — writes a plan file to `.greenlight/plans/{suiteSlug}/{testSlug}.json`.
    - `deletePlan(projectRoot, suiteSlug, testSlug)` — removes a stale plan.
-   - Slug generation: kebab-case from suite/test names.
+   - `ensureGitignore(projectRoot)` — appends `.greenlight/` to `.gitignore` if it exists and doesn't already contain the entry.
 
 4. `plan-generator.ts`:
-   - `createPlanRecorder(testCase, suiteConfig): PlanRecorder` — returns a recorder that the Pilot calls after each step.
-   - `recorder.recordStep(step, action, resolvedSelector, postPageState)` — captures the concrete selector (role + name extracted from the a11y node that was acted upon), the action, and a post-step fingerprint.
-   - `recorder.finalize(): HeuristicPlan` — produces the complete plan with metadata and source hash.
-   - Integrates with `pilot.ts`: after each successful step execution, call the recorder. On test case completion, finalize and save the plan.
+   - `createPlanRecorder(suiteSlug, testSlug, sourceHash, model): PlanRecorder` — returns a recorder.
+   - `recorder.recordStep(step, action, executionResult, postState)` — captures the resolved selector from `ExecutionResult.resolvedSelector` (role+name for ref-based, CSS for text-based), the action details, and a post-step fingerprint (URL, title).
+   - `recorder.finalize(): HeuristicPlan` — produces the complete plan with metadata.
+   - Integrates with `pilot.ts`: the pilot calls `recordStep()` after each successful step execution.
 
 5. `plan-runner.ts`:
-   - `runCachedPlan(page, plan, config): TestCaseResult` — for each `HeuristicStep`:
-     1. Build a Playwright locator from `selector` (e.g., `page.getByRole(role, { name })`).
-     2. Execute the action directly (click, fill, etc.) — no LLM involved.
-     3. For assertion steps: evaluate the concrete assertion against the page.
-     4. Validate the post-step fingerprint. On significant drift (element not found, unexpected URL), mark the step as a **plan drift** failure.
-   - Returns a `TestCaseResult` with a `mode: "cached"` indicator.
+   - `runCachedPlan(page, plan, testName): TestCaseResult` — for each `HeuristicStep`:
+     1. For click/type/select: build a Playwright locator from `selector` (`page.getByRole()` for role-based, `page.locator()` for CSS-based), execute directly.
+     2. For navigate/press/wait/assert/scroll: delegate to `executeAction()` from the regular executor.
+     3. After each step, validate the URL path fingerprint. On drift (element not found or URL path mismatch), mark as plan drift failure.
+   - Returns a `TestCaseResult` with `mode: "cached"` and `drifted: boolean`.
+   - Plans are saved per-test: only passing tests get a cached plan. Failing tests must be fixed before a plan is cached.
 
-6. Update `pilot.ts`:
-   - Accept an optional `PlanRecorder` and call it during step execution.
-   - After a successful test case run in discovery mode, save the plan via `plan-store.ts`.
+6. Update `reporter/types.ts`:
+   - Add `ResolvedSelector` type: `{ role?, name?, css? }`.
+   - Add `resolvedSelector?: ResolvedSelector` to `ExecutionResult`.
+   - Add `mode?: "discovery" | "cached"` and `drifted?: boolean` to `TestCaseResult`.
 
-7. Update the CLI / run logic:
+7. Update `pilot/executor.ts`:
+   - Add `extractCssSelector(locator)` — evaluates in-browser to build a unique path-based CSS selector from the DOM element.
+   - Add `extractSelectorInfo(action, a11yTree, locator)` — for ref-based actions returns role+name from the a11y node; for text-based returns the extracted CSS selector.
+   - Populate `resolvedSelector` in `ExecutionResult` for click, type, select, and scroll-with-ref actions.
+   - Export `runWithNavigationHandling()` for use by plan-runner.
+
+8. Update `pilot/pilot.ts`:
+   - Accept optional `PlanRecorder` in `PilotOptions`.
+   - After each successful step execution, call `recorder.recordStep()` with the step, action, execution result, and post-state URL/title.
+
+9. Update CLI / run logic:
+   - LLM client is created lazily — only when a test case actually needs a discovery run. No API key required if all tests have valid cached plans.
    - Before running a test case, compute its source hash and check against `hashes.json`.
-   - If a valid cached plan exists → use `plan-runner.ts` (fast run).
-   - If no plan or hash mismatch → use the full Pilot loop (discovery run), then save the new plan.
-   - Add CLI flags:
-     - `--discover` — force discovery run, ignore cached plans.
-     - `--on-drift <fail|rerun>` — behavior on plan drift (default: `fail`).
-     - `--plan-status` — print cache status for all test cases and exit.
+   - If cached plan exists and hash matches and not `--discover` → use `runCachedPlan()` (fast run).
+   - If no plan or hash mismatch → use the full Pilot loop (discovery run) with a recorder. Save plan only if the test passes.
+   - On plan drift with `--on-drift rerun`: re-create browser context and run full discovery.
+   - Add CLI flags: `--discover`, `--on-drift <fail|rerun>`, `--plan-status`.
 
-8. Create `.greenlight/` directory structure on first discovery run. Add `.greenlight/` to the project's `.gitignore` if it exists.
+10. Add `.greenlight/` to `.gitignore`. The `ensureGitignore()` helper also appends it on first plan save if not already present.
 
 **Verify:**
 ```bash

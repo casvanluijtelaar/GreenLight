@@ -194,11 +194,15 @@ During a discovery run, the Pilot processes each natural-language step through t
 
 - The **original natural-language step** text.
 - The **resolved action** returned by the LLM (e.g., `{ action: "click", ref: "e42" }`).
-- The **concrete element selector** used by Playwright to execute the action (role, name, and any additional attributes needed to locate the element deterministically).
-- For assertion steps: the **concrete assertion** (e.g., `{ type: "text_contains", selector: { role: "heading", name: "Dashboard" }, expected: "Welcome back" }`).
-- A **post-step page state fingerprint** (URL, page title, key visible elements) to detect when the cached plan has drifted from the actual application state.
+- The **concrete element selector** used by Playwright to execute the action:
+  - For elements resolved via the **accessibility tree** (ref-based): the element's `role` and `name` (e.g., `{ role: "button", name: "Sign In" }`).
+  - For elements resolved via **visible text** fallback (text-based): a **CSS DOM selector** extracted from the actual DOM element after resolution (e.g., `{ css: "nav > button:nth-of-type(2)" }`). This provides a stable replay target even for elements that lack ARIA markup.
+- For assertion steps: the **concrete assertion** (e.g., `{ type: "contains_text", expected: "Welcome back" }`).
+- A **post-step fingerprint** (URL, page title) to detect when the cached plan has drifted from the actual application state.
 
 The result is a **heuristic test plan** — a sequence of concrete, element-bound actions that can be replayed without LLM involvement.
+
+**Plans are saved per test case, not per suite.** Each passing test case gets its own cached plan. If a test case fails during a discovery run, no plan is saved for that test — the developer must fix the test first. This means a suite can have a mix of cached and uncached test cases: passing tests replay from cache, failing or new tests go through LLM discovery.
 
 #### 3.3 Plan Storage
 
@@ -252,7 +256,11 @@ When a cached heuristic plan is available and valid, the fast run:
 
 Assertions in the heuristic plan are evaluated directly against the page state using Playwright queries — no LLM interpretation needed.
 
-#### 3.6 CLI Flags
+#### 3.6 API Key Requirements
+
+When all test cases in a run have valid cached plans, no LLM calls are needed and the `OPENROUTER_API_KEY` / `LLM_API_KEY` environment variable is not required. This enables fast CI/CD runs without LLM credentials. The API key is only validated when a test case actually needs a discovery run (no cached plan, stale plan, or `--discover` flag).
+
+#### 3.7 CLI Flags
 
 ```bash
 # Force a full discovery run (ignore cached plans)
@@ -271,7 +279,7 @@ greenlight run --plan-status
 # → search-flow/user-can-search: no cached plan
 ```
 
-#### 3.7 The `.greenlight` Directory
+#### 3.8 The `.greenlight` Directory
 
 The `.greenlight/` directory should be added to `.gitignore` by default — cached plans are environment-specific (element selectors may differ between staging deployments). However, teams may choose to commit them if their staging environment is stable, trading portability for faster CI runs.
 

@@ -10,7 +10,8 @@
       "Bash(npm test:*)",
       "Bash(npx playwright:*)",
       "Bash(npx vitest:*)",
-      "Bash(npm link:*)"
+      "Bash(npm link:*)",
+      "Bash(node dist/cli/index.js run --help 2>&1)"
     ]
   }
 }

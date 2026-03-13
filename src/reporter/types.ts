@@ -35,6 +35,16 @@ export interface ConsoleEntry {
 	text: string
 }
 
+/** How an element was resolved — stored in heuristic plans for cached replay. */
+export interface ResolvedSelector {
+	/** ARIA role from the a11y tree (for ref-based resolution). */
+	role?: string
+	/** Accessible name from the a11y tree. */
+	name?: string
+	/** CSS DOM selector extracted from the element (for text-based fallback). */
+	css?: string
+}
+
 /** Result of executing a single action in the browser. */
 export interface ExecutionResult {
 	/** Whether the action completed successfully. */
@@ -43,6 +53,8 @@ export interface ExecutionResult {
 	duration: number
 	/** Error message if the action failed. */
 	error?: string
+	/** Selector info for the element that was acted upon (used by plan recorder). */
+	resolvedSelector?: ResolvedSelector
 }
 
 /** Per-phase timing breakdown for a step. */
@@ -85,6 +97,10 @@ export interface TestCaseResult {
 	steps: StepResult[]
 	/** Total duration in ms. */
 	duration: number
+	/** Execution mode: "discovery" (LLM-driven) or "cached" (heuristic plan replay). */
+	mode?: "discovery" | "cached"
+	/** Whether the cached plan drifted from the actual application state. */
+	drifted?: boolean
 }
 
 /** A structured action returned by the LLM for a single step. */
