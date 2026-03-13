@@ -339,40 +339,31 @@ The following are explicitly **not** part of the initial release. They are noted
 ### Page Representation: Accessibility Tree + Vision Fallback
 
 ```mermaid
-block-beta
-  columns 3
+flowchart TD
+    subgraph capture[Page State Capture]
+        step[Plain English Step]
+        a11y[A11y Tree<br/>primary]
+        screenshot[Screenshot<br/>fallback]
+    end
 
-  step["Step: click 'Add to Cart'\nnext to 'Widget Pro'"]:3
+    subgraph resolve[LLM Resolution]
+        llm[Claude API]
+        action[Action JSON<br/>e.g. click ref e42]
+    end
 
-  capture["1. Capture page state"]:3
+    subgraph execute[Browser Execution]
+        playwright[Playwright]
+        browser[(Chromium)]
+    end
 
-  a11y["Accessibility Tree\n(YAML, ~3KB, ~300 tokens)"] space:1 screenshot["Screenshot\n(PNG, ~100KB, ~1000 tokens)"]
-
-  llm["2. LLM resolves element\n(a11y primary, vision fallback)"]:3
-
-  action["3. Action returned\n{ action: 'click', ref: 'e42' }"]:3
-
-  exec["4. Playwright executes\nlocator from ref 'e42'"]:3
-
-  postcap["5. Post-action screenshot\n(for report only)"]:3
-
-  step --> capture
-  capture --> a11y
-  capture --> screenshot
-  a11y --> llm
-  screenshot -.-> llm
-  llm --> action
-  action --> exec
-  exec --> postcap
-
-  style step fill:#1a1a2e,color:#fff
-  style capture fill:#16213e,color:#fff
-  style a11y fill:#533483,color:#fff
-  style screenshot fill:#333,color:#fff,stroke-dasharray:5
-  style llm fill:#e94560,color:#fff
-  style action fill:#0f3460,color:#fff
-  style exec fill:#0f3460,color:#fff
-  style postcap fill:#16213e,color:#fff
+    step --> a11y
+    step -.-> screenshot
+    a11y --> llm
+    screenshot -.->|when ambiguous| llm
+    llm --> action
+    action --> playwright
+    playwright --> browser
+    browser -->|post-action state| capture
 ```
 
 **Strategy:** The accessibility tree is the *primary* representation for every step. The LLM receives it as structured text and resolves element references against it. Screenshots are captured after every step for reports, but only sent to the LLM when:
@@ -415,45 +406,34 @@ Model selection is configurable per suite. Default: `claude-sonnet-4-6` for spee
      Component Responsibilities list below it. -->
 
 ```mermaid
-block-beta
-  columns 5
+flowchart TD
+    subgraph cli[greenlight CLI]
+        yaml[YAML Parser]
+        reporter[Reporter<br/>CLI / JSON / HTML]
 
-  cli["greenlight CLI"]:5
+        subgraph runner[Test Runner]
+            orchestrator[Orchestration<br/>parallelism, setup/teardown]
 
-  space yaml["YAML Parser"]:2 space:2
-  space runner["Test Runner\n(orchestration, parallelism)"]:3 reporter["Reporter\n(CLI / JSON / HTML)"]
+            subgraph pilot[The Pilot — per test case]
+                state[Page State Capture<br/>a11y snapshot, screenshot, logs]
+                llm[LLM Client<br/>Claude API]
+                executor[Action Executor<br/>Playwright]
+            end
+        end
+    end
 
-  space pilot["The Pilot (per test case)"]:4
+    subgraph browser[Browser Layer]
+        chromium[(Chromium Instance<br/>Browser Context<br/>staging site)]
+    end
 
-  block:pilotInternals:5
-    columns 3
-    capture["Page State Capture\n\na11y snapshot\nscreenshot\nconsole logs"]
-    llm["LLM Client\n(Claude API)\n\ntext + vision\nstructured output\nreasoning trace"]
-    executor["Action Executor\n(Playwright)\n\nclick / type / navigate\ncookie / storage\nfile up / download"]
-  end
-
-  space chromium[("Chromium Instance\n(Browser Context)\n\nstaging site")]:3 space
-
-  cli --> yaml
-  cli --> reporter
-  yaml --> runner
-  runner --> pilot
-  pilot --> capture
-  pilot --> llm
-  pilot --> executor
-  capture --> chromium
-  executor --> chromium
-  runner --> reporter
-
-  style cli fill:#1a1a2e,color:#fff
-  style runner fill:#16213e,color:#fff
-  style pilot fill:#0f3460,color:#fff
-  style capture fill:#533483,color:#fff
-  style llm fill:#e94560,color:#fff
-  style executor fill:#0f3460,color:#fff
-  style chromium fill:#222,color:#fff,stroke:#e94560
-  style yaml fill:#16213e,color:#fff
-  style reporter fill:#16213e,color:#fff
+    yaml --> orchestrator
+    orchestrator --> pilot
+    state --> llm
+    llm --> executor
+    state --> chromium
+    executor --> chromium
+    chromium -->|page state| state
+    orchestrator --> reporter
 ```
 
 ### Component Responsibilities

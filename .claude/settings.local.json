@@ -3,7 +3,8 @@
     "allow": [
       "WebFetch(domain:testrigor.com)",
       "WebSearch",
-      "WebFetch(domain:support.testrigor.com)"
+      "WebFetch(domain:support.testrigor.com)",
+      "Bash(git push:*)"
     ]
   }
 }
