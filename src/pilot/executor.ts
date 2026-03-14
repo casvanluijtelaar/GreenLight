@@ -324,14 +324,11 @@ export async function executeAction(
 					a11yTree,
 					locator,
 				)
-				// Click the target to focus/activate it (may open an input overlay).
-				// Use navigation handling in case the click triggers a page change.
-				await runWithNavigationHandling(page, () => locator.click())
-				// Clear existing content and type character-by-character
-				// via the keyboard, triggering proper JS events
-				await page.keyboard.press("Control+A")
-				await page.keyboard.press("Backspace")
-				await page.keyboard.type(action.value, { delay: 30 })
+				// Use fill() to set the value atomically — avoids race conditions
+				// where overlay animations swallow the first keystrokes.
+				// fill() focuses the element, sets its value, and dispatches
+				// input/change events in a single operation.
+				await locator.fill(action.value)
 				break
 			}
 

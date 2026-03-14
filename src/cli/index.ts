@@ -12,7 +12,10 @@ import {
 	closeBrowser,
 	toBrowserOptions,
 } from "../browser/browser.js"
-import { attachConsoleCollector } from "../pilot/state.js"
+import {
+	attachConsoleCollector,
+	attachNetworkTracker,
+} from "../pilot/state.js"
 import {
 	resolveLLMConfig,
 	createLLMClient,
@@ -264,6 +267,7 @@ program
 						const context = await createContext(browser, browserOpts)
 						const page = await createPage(context)
 						const { drain } = attachConsoleCollector(page)
+						const { waitForNetworkIdle } = attachNetworkTracker(page)
 						trace.attachToPage(page)
 
 						try {
@@ -288,6 +292,7 @@ program
 								page,
 								cachedPlan,
 								test.name,
+								{ waitForNetworkIdle },
 							)
 
 							// Handle plan drift
@@ -306,6 +311,8 @@ program
 								const page2 = await createPage(ctx2)
 								const { drain: drain2 } =
 									attachConsoleCollector(page2)
+								const { waitForNetworkIdle: waitForNetworkIdle2 } =
+									attachNetworkTracker(page2)
 								trace.attachToPage(page2)
 								await page2.goto(suite.base_url)
 
@@ -325,6 +332,7 @@ program
 										debug: opts.debug,
 										trace,
 										recorder,
+										waitForNetworkIdle: waitForNetworkIdle2,
 									},
 								)
 								result.mode = "discovery"
@@ -370,6 +378,7 @@ program
 									debug: opts.debug,
 									trace,
 									recorder,
+									waitForNetworkIdle,
 								},
 							)
 							result.mode = "discovery"

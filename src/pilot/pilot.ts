@@ -29,6 +29,8 @@ export interface PilotOptions {
 	trace?: TraceLogger
 	/** Optional plan recorder for capturing heuristic plans during discovery. */
 	recorder?: PlanRecorder
+	/** Wait for network requests to settle before capturing page state. */
+	waitForNetworkIdle?: () => Promise<void>
 }
 
 /**
@@ -105,7 +107,10 @@ export async function runTestCase(
 				action = plannedAction
 				trace?.log("plan:hit", JSON.stringify(action))
 			} else {
-				// Needs page state: capture a11y tree → ask LLM
+				// Needs page state: wait for async requests to settle, then capture
+				if (options.waitForNetworkIdle) {
+					await options.waitForNetworkIdle()
+				}
 				trace?.log("capture:start")
 				let t0 = performance.now()
 				resetRefCounter()
@@ -116,6 +121,10 @@ export async function runTestCase(
 				if (options.debug) {
 					console.log(`\n      A11y tree:\n`)
 					console.log(formatA11yTree(state.a11yTree))
+					if (state.visibleText) {
+						console.log(`\n      Visible text:\n`)
+						console.log(state.visibleText)
+					}
 				}
 
 				trace?.log("llm:start")

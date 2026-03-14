@@ -43,7 +43,7 @@ export interface LLMClient {
 /** System prompt that defines the Pilot's persona and expected response format. */
 export const SYSTEM_PROMPT = `You are The Pilot, an AI agent that executes end-to-end tests in a web browser.
 
-You receive a plain-English test step and the current page state (an accessibility tree with element refs).
+You receive a plain-English test step and the current page state (an accessibility tree with element refs, plus the visible text on the page).
 
 Your job is to determine the SINGLE browser action needed to execute the step.
 
@@ -62,6 +62,7 @@ Element targeting:
 - Use "ref" when the target element appears in the accessibility tree (preferred).
 - Use "text" when the target is NOT in the accessibility tree but is visible on the page. The text value should match the visible text of the element you want to interact with. This is common when page markup lacks proper ARIA roles.
 - Never guess a ref. If the element you need is not in the tree, use "text" instead.
+- A "Visible page text" section shows what a human actually sees on the page. Use it to find elements that are missing from the accessibility tree — target them with "text" matching their visible label.
 
 IMPORTANT: Any step that starts with "check that" is ALWAYS an assertion. Never return a click, type, or other interaction for a "check that" step.
 
@@ -102,11 +103,16 @@ Rules:
 - Assertions WITHOUT quoted strings describe something conceptual (e.g. "check that the page contains a Leads form", "check that there is a contact section"). These CANNOT be pre-resolved because the actual page text may differ from the description. Output PAGE with the full step as description so the runtime LLM can inspect the page.
 - For assertions that CAN be resolved, preserve the FULL expected text exactly as written. Never truncate or shorten it.
 - Steps that require seeing the page to identify interactive elements → PAGE with a description.
-- IMPORTANT: When a step lists multiple items separated by dashes, commas, or "then", each item is a SEPARATE action and must be output on its own line.
-  For example, the input step "Select Red - Green - Blue in the color picker" must produce three lines:
-  PAGE "click Red in the color picker"
-  PAGE "click Green in the color picker"
-  PAGE "click Blue in the color picker"
+- IMPORTANT: Each output line must describe exactly ONE atomic interaction (one click, one type, one select). If an input step describes or implies multiple interactions — whether separated by dashes, commas, slashes, "then", "and", or simply listing several values/items/choices — split it into one PAGE line per interaction. Always err on the side of splitting: if a step could be multiple actions, it IS multiple actions.
+  For example:
+  Input: "Select Red - Green - Blue in the color picker" → three lines:
+  PAGE "select Red in the color picker"
+  PAGE "select Green in the color picker"
+  PAGE "select Blue in the color picker"
+  Input: "Fill in name, email and phone" → three lines:
+  PAGE "fill in name"
+  PAGE "fill in email"
+  PAGE "fill in phone"
 - No blank lines, no numbering, no explanation. Only action lines.
 `
 
@@ -115,15 +121,20 @@ Rules:
 /** Build the user message containing the step and page state. */
 export function buildUserMessage(step: string, pageState: PageState): string {
 	const tree = formatA11yTree(pageState.a11yTree)
-	return [
+	const parts = [
 		`Current URL: ${pageState.url}`,
 		`Page title: ${pageState.title}`,
 		"",
 		"Accessibility tree:",
 		tree,
-		"",
-		`Step to execute: ${step}`,
-	].join("\n")
+	]
+
+	if (pageState.visibleText) {
+		parts.push("", "Visible page text:", pageState.visibleText)
+	}
+
+	parts.push("", `Step to execute: ${step}`)
+	return parts.join("\n")
 }
 
 /** Build the full messages array for a chat completion request. */

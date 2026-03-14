@@ -2,8 +2,81 @@
  * Page state capture: accessibility tree snapshots, screenshots, and console logs.
  */
 
-import type { Page } from "playwright"
+import type { Page, Request } from "playwright"
 import type { A11yNode, ConsoleEntry, PageState } from "../reporter/types.js"
+
+// ── Network idle tracking ───────────────────────────────────────────
+
+/**
+ * Attach a network request tracker to a page.
+ * Call once after page creation. The returned `waitForNetworkIdle` function
+ * waits until all in-flight requests have completed (with a grace period
+ * to allow follow-up requests to start).
+ */
+export function attachNetworkTracker(page: Page): {
+	waitForNetworkIdle: (timeoutMs?: number) => Promise<void>
+} {
+	const pending = new Set<Request>()
+
+	page.on("request", (req) => pending.add(req))
+	page.on("requestfinished", (req) => pending.delete(req))
+	page.on("requestfailed", (req) => pending.delete(req))
+
+	return {
+		/**
+		 * Wait until the page has settled: network requests done AND
+		 * rendered content stable. Two phases:
+		 * 1. Wait for zero in-flight requests (with grace period for chained requests)
+		 * 2. Wait for innerText to stop changing (catches CSS transitions/animations)
+		 */
+		async waitForNetworkIdle(timeoutMs = 5000): Promise<void> {
+			const deadline = performance.now() + timeoutMs
+
+			// Phase 1: wait for network requests to complete
+			const networkGrace = 200
+			let quietSince = pending.size === 0 ? performance.now() : 0
+			while (performance.now() < deadline) {
+				if (pending.size === 0) {
+					if (!quietSince) quietSince = performance.now()
+					if (performance.now() - quietSince >= networkGrace) break
+				} else {
+					quietSince = 0
+				}
+				await new Promise((r) => setTimeout(r, 50))
+			}
+
+			// Phase 2: wait for DOM content to stabilize.
+			// Use textContent (not innerText) because some frameworks
+			// render content that CSS hides from innerText during animations.
+			// textContent sees all DOM text regardless of CSS.
+			const contentGrace = 300
+			let previous = ""
+			try {
+				previous =
+					(await page.locator("body").textContent()) ?? ""
+			} catch {
+				return
+			}
+			let stableSince = performance.now()
+			while (performance.now() < deadline) {
+				await new Promise((r) => setTimeout(r, 100))
+				let current = ""
+				try {
+					current =
+						(await page.locator("body").textContent()) ?? ""
+				} catch {
+					return
+				}
+				if (current !== previous) {
+					previous = current
+					stableSince = performance.now()
+				} else if (performance.now() - stableSince >= contentGrace) {
+					return
+				}
+			}
+		},
+	}
+}
 
 /**
  * Collect console messages from a page.
@@ -48,12 +121,47 @@ export async function capturePageState(
 	])
 
 	const a11yTree = parseA11ySnapshot(a11yRaw)
+
+	// Capture all text content on the page. This supplements the a11y tree
+	// which can miss content rendered with non-semantic markup.
+	// We use textContent (not innerText) because innerText skips elements
+	// hidden by CSS transitions/animations that are still interactive.
+	// Script and style content is excluded.
+	let visibleText: string | undefined
+	try {
+		const raw = await page.evaluate(() => {
+			function walk(node: Node): string {
+				if (node.nodeType === 3) return node.textContent ?? "" // TEXT_NODE
+				if (node.nodeType !== 1) return "" // Only process ELEMENT_NODE
+				const el = node as Element
+				const tag = el.tagName
+				if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT")
+					return ""
+				const parts: string[] = []
+				for (const child of el.childNodes) {
+					parts.push(walk(child))
+				}
+				return parts.join("")
+			}
+			return walk(document.body)
+		})
+		// Collapse whitespace runs into single spaces, trim blank lines
+		visibleText =
+			raw
+				.split("\n")
+				.map((l) => l.replace(/\s+/g, " ").trim())
+				.filter((l) => l.length > 0)
+				.join("\n") || undefined
+	} catch {
+		// Skip if page is mid-navigation
+	}
+
 	const screenshot = screenshotBuffer
 		? screenshotBuffer.toString("base64")
 		: undefined
 	const consoleLogs = consoleDrain()
 
-	return { a11yTree, a11yRaw, screenshot, url, title, consoleLogs }
+	return { a11yTree, a11yRaw, visibleText, screenshot, url, title, consoleLogs }
 }
 
 // ── A11y snapshot parser ──────────────────────────────────────────────

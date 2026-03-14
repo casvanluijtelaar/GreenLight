@@ -47,10 +47,7 @@ async function executeHeuristicStep(
 			case "type": {
 				if (!step.value) throw new Error("type step requires a value")
 				const locator = buildLocator(page, step.selector!)
-				await runWithNavigationHandling(page, () => locator.click())
-				await page.keyboard.press("Control+A")
-				await page.keyboard.press("Backspace")
-				await page.keyboard.type(step.value, { delay: 30 })
+				await locator.fill(step.value)
 				break
 			}
 
@@ -118,6 +115,7 @@ export async function runCachedPlan(
 	page: Page,
 	plan: HeuristicPlan,
 	testName: string,
+	options?: { waitForNetworkIdle?: () => Promise<void> },
 ): Promise<TestCaseResult> {
 	const startTime = performance.now()
 	const stepResults: StepResult[] = []
@@ -125,6 +123,11 @@ export async function runCachedPlan(
 
 	for (const step of plan.steps) {
 		const stepStart = performance.now()
+
+		// Wait for async content to settle before interacting
+		if (options?.waitForNetworkIdle) {
+			await options.waitForNetworkIdle()
+		}
 
 		const result = await executeHeuristicStep(page, step)
 
