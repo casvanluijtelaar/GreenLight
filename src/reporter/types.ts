@@ -59,6 +59,8 @@ export interface ExecutionResult {
 	error?: string
 	/** Selector info for the element that was acted upon (used by plan recorder). */
 	resolvedSelector?: ResolvedSelector
+	/** For remember actions: the captured value. */
+	rememberedValue?: string
 }
 
 /** Per-phase timing breakdown for a step. */
@@ -123,5 +125,14 @@ export interface Action {
 	assertion?: {
 		type: string
 		expected: string
+	}
+	/** For remember actions: the variable name to store the captured value. */
+	rememberAs?: string
+	/** For compare assertions: reference to a remembered variable and operator. */
+	compare?: {
+		/** The remembered variable name to compare against. */
+		variable: string
+		/** Comparison operator. */
+		operator: "less_than" | "greater_than" | "equal" | "not_equal" | "less_or_equal" | "greater_or_equal"
 	}
 }

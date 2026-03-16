@@ -5,11 +5,8 @@ import {
 	createPage,
 	closeBrowser,
 } from "../../src/browser/browser.js"
-import {
-	executeAction,
-	findNodeByRef,
-	findNodePath,
-} from "../../src/pilot/executor.js"
+import { executeAction } from "../../src/pilot/executor.js"
+import { findNodeByRef, findNodePath } from "../../src/pilot/locator.js"
 import type { A11yNode, Action } from "../../src/reporter/types.js"
 import { DEFAULTS } from "../../src/types.js"
 

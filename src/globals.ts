@@ -10,10 +10,12 @@ export const globals = {
 	debug: false,
 	/** Trace logger instance (--trace). Always present; no-op when tracing is disabled. */
 	trace: {
-		log() {},
-		attachToPage() {},
-		detachFromPage() {},
+		log() { /* noop */ },
+		attachToPage() { /* noop */ },
+		detachFromPage() { /* noop */ },
 	} as TraceLogger,
+	/** Value store for remember/compare across steps within a test case. */
+	valueStore: new Map<string, string>(),
 }
 
 /**

@@ -1,14 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import {
-	buildUserMessage,
-	buildMessages,
-	parseActionResponse,
-	parsePlanResponse,
 	resolveApiKey,
 	resolveLLMConfig,
 	createLLMClient,
-	SYSTEM_PROMPT,
 } from "../../src/pilot/llm.js"
+import { buildUserMessage, buildMessages } from "../../src/pilot/message-builder.js"
+import { parseActionResponse, parsePlanResponse } from "../../src/pilot/response-parser.js"
+import { SYSTEM_PROMPT } from "../../src/pilot/prompts.js"
 import type { PageState } from "../../src/reporter/types.js"
 import type { RunConfig } from "../../src/types.js"
 import { DEFAULTS } from "../../src/types.js"

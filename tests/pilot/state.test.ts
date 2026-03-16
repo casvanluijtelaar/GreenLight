@@ -3,7 +3,7 @@ import {
 	parseA11ySnapshot,
 	formatA11yTree,
 	resetRefCounter,
-} from "../../src/pilot/state.js"
+} from "../../src/pilot/a11y-parser.js"
 
 beforeEach(() => {
 	resetRefCounter()

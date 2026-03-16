@@ -12,8 +12,11 @@ import type {
 	StepTiming,
 	TestCaseResult,
 } from "../reporter/types.js"
-import type { LLMClient, PlannedStep } from "./llm.js"
-import { capturePageState, resetRefCounter } from "./state.js"
+import type { LLMClient } from "./llm.js"
+import type { PlannedStep } from "./response-parser.js"
+import { validatePlanReferences } from "./response-parser.js"
+import { capturePageState } from "./state.js"
+import { resetRefCounter } from "./a11y-parser.js"
 import { executeAction } from "./executor.js"
 import type { PlanRecorder } from "../planner/plan-generator.js"
 import { globals } from "../globals.js"
@@ -42,9 +45,10 @@ export async function runTestCase(
 	const startTime = performance.now()
 	const stepResults: StepResult[] = []
 
-	// Fresh conversation history and stable ref map for each test case
+	// Fresh conversation history, stable ref map, and value store for each test case
 	llm.resetHistory()
 	resetRefCounter()
+	globals.valueStore.clear()
 
 	const trace = globals.trace
 	const recorder = options.recorder
@@ -83,6 +87,16 @@ export async function runTestCase(
 		console.log()
 	}
 
+	// Validate that every COMPARE has a matching REMEMBER before it
+	const planErrors = validatePlanReferences(plan)
+	if (planErrors.length > 0) {
+		if (globals.debug) {
+			for (const err of planErrors) console.log(`      Plan error: ${err}`)
+		}
+		// Log the errors but don't fail — the LLM may have made a mistake
+		// that the runtime can still handle
+	}
+
 	// Build the execution queue — EXPAND steps get expanded at runtime
 	// and their sub-steps are spliced into the queue.
 	const queue = [...plan]
@@ -92,7 +106,7 @@ export async function runTestCase(
 	while (queueIndex < queue.length && !failed) {
 		const planned = queue[queueIndex]
 		queueIndex++
-		const { step, action: plannedAction, needsExpansion } = planned
+		const { step, action: plannedAction, needsExpansion, rememberAs, compare: plannedCompare } = planned
 
 		// ── EXPAND: runtime step expansion (e.g. form filling) ────────
 		if (needsExpansion) {
@@ -178,6 +192,28 @@ export async function runTestCase(
 				a11yTree = state.a11yTree
 			}
 
+			// Propagate rememberAs from planned step to action
+			if (rememberAs) {
+				action.rememberAs = rememberAs
+				// If the LLM didn't return a "remember" action for a REMEMBER step,
+				// wrap it as one so the executor captures the value
+				if (action.action !== "remember") {
+					action = { action: "remember", ref: action.ref, text: action.text, rememberAs }
+				}
+			}
+
+			// Propagate compare metadata from planned step to action.
+			// The LLM resolves the element ref at runtime; we inject the
+			// comparison operator and variable from the plan.
+			if (plannedCompare) {
+				action.compare ??= {
+					variable: plannedCompare.variable,
+					operator: plannedCompare.operator as Action["compare"] extends { operator: infer O } ? O : never,
+				}
+				action.assertion ??= { type: "compare", expected: step }
+				action.action = "assert"
+			}
+
 			if (globals.debug) {
 				console.log(`      Action: ${JSON.stringify(action)}`)
 			}
@@ -205,6 +241,11 @@ export async function runTestCase(
 				continue
 			}
 
+			// Store remembered value if this was a remember action
+			if (result.rememberedValue !== undefined && action.rememberAs) {
+				globals.valueStore.set(action.rememberAs, result.rememberedValue)
+			}
+
 			// Capture post-action screenshot for reporting
 			// Retry once if the page is mid-navigation
 			trace.log("postCapture:start")
@@ -227,7 +268,7 @@ export async function runTestCase(
 			)
 
 			// Record step for heuristic plan if recorder is active
-			if (recorder && action) {
+			if (recorder) {
 				recorder.recordStep(step, action, result, {
 					url: postState.url,
 					title: postState.title,

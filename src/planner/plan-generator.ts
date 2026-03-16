@@ -56,6 +56,14 @@ export function createPlanRecorder(
 				hStep.option = action.option
 			}
 
+			if (action.rememberAs !== undefined) {
+				hStep.rememberAs = action.rememberAs
+			}
+
+			if (action.compare) {
+				hStep.compare = { ...action.compare }
+			}
+
 			if (action.assertion) {
 				hStep.assertion = { ...action.assertion }
 			}

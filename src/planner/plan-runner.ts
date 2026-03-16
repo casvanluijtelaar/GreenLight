@@ -4,10 +4,11 @@
  * from the selector. For other actions, delegates to the regular executor.
  */
 
-import type { Page } from "playwright"
+import type { Page, Locator } from "playwright"
 import type { Action, StepResult, TestCaseResult } from "../reporter/types.js"
 import type { HeuristicPlan, HeuristicSelector, HeuristicStep } from "./plan-types.js"
 import { executeAction, runWithNavigationHandling } from "../pilot/executor.js"
+import { checkCheckbox } from "../pilot/checkbox.js"
 import { globals } from "../globals.js"
 
 type AriaRole = Parameters<Page["getByRole"]>[0]
@@ -45,28 +46,79 @@ async function executeHeuristicStep(
 	try {
 		switch (step.action) {
 			case "click": {
-				const locator = buildLocator(page, step.selector!)
+				if (!step.selector) throw new Error("click step requires a selector")
+				const locator = buildLocator(page, step.selector)
 				await runWithNavigationHandling(page, () => locator.click())
 				break
 			}
 
 			case "type": {
 				if (!step.value) throw new Error("type step requires a value")
-				const locator = buildLocator(page, step.selector!)
+				if (!step.selector) throw new Error("type step requires a selector")
+				const locator = buildLocator(page, step.selector)
 				await locator.fill(step.value)
 				break
 			}
 
 			case "select": {
 				if (!step.value) throw new Error("select step requires a value")
-				const locator = buildLocator(page, step.selector!)
-				await locator.selectOption({ label: step.value })
+				if (!step.selector) throw new Error("select step requires a selector")
+				const locator = buildLocator(page, step.selector)
+				const tag = await locator.evaluate((el) => el.tagName).catch(() => "")
+				if (tag === "SELECT") {
+					await locator.selectOption({ label: step.value })
+				} else {
+					// Custom dropdown: click to open, find option in popup
+					await locator.click()
+					await page.waitForTimeout(500)
+					let clicked = false
+					// Search in menu/listbox containers first
+					const popupSelectors = [
+						"[role='menu']", "[role='listbox']",
+						"[data-part='content']",
+						"[data-state='open'][data-scope='menu']",
+					]
+					for (const sel of popupSelectors) {
+						if (clicked) break
+						try {
+							const containers = page.locator(sel)
+							const count = await containers.count()
+							for (let i = 0; i < count && !clicked; i++) {
+								const container = containers.nth(i)
+								if (!await container.isVisible().catch(() => false)) continue
+								const opt = container.getByText(step.value, { exact: true })
+								if (await opt.first().isVisible().catch(() => false)) {
+									await opt.first().click()
+									clicked = true
+								}
+							}
+						} catch { /* try next */ }
+					}
+					// Fallback: role-based page-wide
+					if (!clicked) {
+						const roles = ["menuitem", "menuitemradio", "option"] as const
+						for (const role of roles) {
+							try {
+								const opt = page.getByRole(role, { name: step.value })
+								if (await opt.first().isVisible().catch(() => false)) {
+									await opt.first().click()
+									clicked = true
+									break
+								}
+							} catch { /* try next */ }
+						}
+					}
+					if (!clicked) {
+						throw new Error(`Could not find option "${step.value}" in custom dropdown`)
+					}
+				}
 				break
 			}
 
 			case "autocomplete": {
 				if (!step.value) throw new Error("autocomplete step requires a value")
-				const locator = buildLocator(page, step.selector!)
+				if (!step.selector) throw new Error("autocomplete step requires a selector")
+				const locator = buildLocator(page, step.selector)
 				await locator.click()
 				await locator.fill("")
 				await locator.pressSequentially(step.value, { delay: 50 })
@@ -82,7 +134,7 @@ async function executeHeuristicStep(
 					page.locator(".autocomplete-results > *, .suggestions > *, .dropdown-menu > *"),
 				]
 
-				let suggestions: import("playwright").Locator | undefined
+				let suggestions: Locator | undefined
 				for (const loc of suggestionPatterns) {
 					try {
 						await loc.first().waitFor({ state: "visible", timeout: 5000 })
@@ -122,62 +174,60 @@ async function executeHeuristicStep(
 			}
 
 			case "check": {
-				const locator = buildLocator(page, step.selector!)
-				// Delegate to the executor's checkCheckbox via executeAction
-				const action: Action = { action: "check", ref: "_dummy" }
-				// We can't use executeAction easily here, so replicate the fallback
-				try {
-					await locator.check({ timeout: 3000 })
-				} catch {
-					try {
-						const labelClicked = await locator.evaluate((el: HTMLElement) => {
-							let input: HTMLInputElement | null = null
-							if (el.tagName === "INPUT") input = el as HTMLInputElement
-							else input = el.querySelector("input[type='checkbox']")
-							if (!input) return false
-							if (input.id) {
-								const label = document.querySelector(`label[for="${input.id}"]`)
-								if (label) { (label as HTMLElement).click(); return true }
-							}
-							const label = input.closest("label")
-							if (label) { label.click(); return true }
-							return false
-						})
-						if (!labelClicked) {
-							await locator.click({ force: true, timeout: 2000 })
-						}
-					} catch {
-						await locator.evaluate((el: HTMLElement) => {
-							const input = el.tagName === "INPUT" ? el as HTMLInputElement
-								: el.querySelector("input[type='checkbox']") as HTMLInputElement | null
-							if (input && !input.checked) {
-								const nativeSetter = Object.getOwnPropertyDescriptor(
-									HTMLInputElement.prototype, "checked"
-								)?.set
-								if (nativeSetter) nativeSetter.call(input, true)
-								else input.checked = true
-								input.dispatchEvent(new Event("click", { bubbles: true }))
-								input.dispatchEvent(new Event("input", { bubbles: true }))
-								input.dispatchEvent(new Event("change", { bubbles: true }))
-							} else if (!input) {
-								el.click()
-							}
-						})
-					}
-				}
+				if (!step.selector) throw new Error("check step requires a selector")
+				const locator = buildLocator(page, step.selector)
+				await checkCheckbox(page, locator, true)
 				break
 			}
 
 			case "uncheck": {
-				const locator = buildLocator(page, step.selector!)
-				try {
-					await locator.uncheck({ timeout: 3000 })
-				} catch {
-					await locator.click({ force: true, timeout: 2000 }).catch(() =>
-						locator.dispatchEvent("click")
-					)
-				}
+				if (!step.selector) throw new Error("uncheck step requires a selector")
+				const locator = buildLocator(page, step.selector)
+				await checkCheckbox(page, locator, false)
 				break
+			}
+
+			case "remember": {
+				const varName = step.rememberAs ?? step.value ?? ""
+				let capturedText: string
+				if (step.selector) {
+					const locator = buildLocator(page, step.selector)
+					capturedText = (await locator.textContent() ?? "").trim()
+				} else {
+					// No selector stored — use innerText (preserves visual
+					// line breaks) and search for text matching keywords
+					const keywords = varName
+						.replace(/_/g, " ")
+						.split(" ")
+						.filter((w) => w.length > 2)
+					const innerText = await page.locator("body").innerText()
+					// Split on newlines/tabs to get visual text segments
+					const segments = innerText
+						.split(/[\n\t]+/)
+						.map((s) => s.trim())
+						.filter(Boolean)
+					let best = ""
+					for (const seg of segments) {
+						if (!/\d/.test(seg)) continue
+						const lower = seg.toLowerCase()
+						if (keywords.some((kw) => lower.includes(kw.toLowerCase()))) {
+							if (!best || seg.length < best.length) {
+								best = seg
+							}
+						}
+					}
+					if (!best) {
+						throw new Error(
+							"remember: no selector stored and could not find matching value on page",
+						)
+					}
+					capturedText = best
+				}
+				if (globals.debug) {
+					console.log(`      [cached:remember] Captured "${capturedText}" as "${varName}"`)
+				}
+				globals.valueStore.set(varName, capturedText)
+				return { success: true, duration: performance.now() - start }
 			}
 
 			case "scroll": {
@@ -197,6 +247,25 @@ async function executeHeuristicStep(
 					action: step.action,
 					value: step.value,
 					assertion: step.assertion,
+				}
+				// Pass through compare metadata and selector for compare asserts
+				if (step.compare) {
+					action.compare = {
+						variable: step.compare.variable,
+						operator: step.compare.operator as Action["compare"] extends { operator: infer O } ? O : never,
+					}
+					action.assertion ??= { type: "compare", expected: step.originalStep }
+				}
+				if (step.selector) {
+					// For compare asserts that need an element ref to read current value
+					if (step.selector.role) {
+						action.text = step.selector.name
+					} else if (step.selector.css) {
+						action.text = step.selector.css
+					}
+				}
+				if (step.rememberAs) {
+					action.rememberAs = step.rememberAs
 				}
 				const result = await executeAction(page, action, [])
 				return {
@@ -242,6 +311,7 @@ export async function runCachedPlan(
 	const startTime = performance.now()
 	const stepResults: StepResult[] = []
 	let drifted = false
+	globals.valueStore.clear()
 
 	for (const step of plan.steps) {
 		const stepStart = performance.now()
@@ -264,7 +334,7 @@ export async function runCachedPlan(
 				},
 				status: "failed",
 				duration: performance.now() - stepStart,
-				error: `Plan drift: ${result.error}`,
+				error: `Plan drift: ${result.error ?? "unknown error"}`,
 			})
 			break
 		}
@@ -292,15 +362,6 @@ export async function runCachedPlan(
 			break
 		}
 
-		// Capture post-action screenshot for reporting
-		let screenshot: string | undefined
-		try {
-			const buf = await page.screenshot({ type: "png" })
-			screenshot = buf.toString("base64")
-		} catch {
-			// Screenshot failed — continue without it
-		}
-
 		stepResults.push({
 			step: step.originalStep,
 			action: {
@@ -310,7 +371,6 @@ export async function runCachedPlan(
 			},
 			status: "passed",
 			duration: performance.now() - stepStart,
-			screenshot,
 		})
 	}
 

@@ -28,8 +28,12 @@ export interface HeuristicStep {
 	value?: string
 	/** For autocomplete actions: the specific suggestion to select. */
 	option?: string
+	/** For remember actions: the variable name to store the captured value. */
+	rememberAs?: string
 	/** Assertion details for assert actions. */
 	assertion?: { type: string; expected: string }
+	/** For compare assertions: the comparison metadata. */
+	compare?: { variable: string; operator: string }
 	/** Page state after the step executed, for drift detection. */
 	postStepFingerprint: {
 		url: string
