@@ -307,11 +307,9 @@ flowchart TD
     planner -->|load plan| orchestrator
     state --> llm
     llm --> executor
-    state --> chromium
+    state <--> chromium
     executor --> chromium
-    replay --> chromium
-    chromium -->|page state| state
-    chromium -->|page state| replay
+    replay <--> chromium
     orchestrator --> output
 ```
 
