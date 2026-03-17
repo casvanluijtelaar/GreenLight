@@ -70,7 +70,11 @@ export async function runTestCase(
 	try {
 		plan = await llm.planSteps(testCase.steps)
 	} catch (err) {
-		// If planning fails, fall back to runtime resolution for all steps
+		// LLM API errors (4xx/5xx) must abort the entire run
+		const { LLMApiError } = await import("./providers/index.js")
+		if (err instanceof LLMApiError) throw err
+
+		// Other planning failures — fall back to runtime resolution
 		const msg = err instanceof Error ? err.message : String(err)
 		trace.log("plan:error", msg)
 		if (globals.debug) {
@@ -358,6 +362,11 @@ export async function runTestCase(
 				screenshot: postState.screenshot,
 			})
 		} catch (err) {
+			// LLM API errors (4xx/5xx) must abort the entire run — re-throw
+			// so the CLI loop can catch and stop.
+			const { LLMApiError } = await import("./providers/index.js")
+			if (err instanceof LLMApiError) throw err
+
 			stepResults.push({
 				step,
 				action,

@@ -31,6 +31,7 @@ import type { TestCaseResult } from "../reporter/types.js"
 import type { RunConfig } from "../types.js"
 import { resolveModelConfig } from "../types.js"
 import { globals } from "../globals.js"
+import { LLMApiError } from "../pilot/providers/index.js"
 
 /** Print step-by-step results for a test case. */
 function printStepResults(result: TestCaseResult): void {
@@ -214,7 +215,7 @@ export async function runCommand(
 				? suite.tests.filter((t) => t.name === config.testFilter)
 				: suite.tests
 
-			for (const test of tests) {
+			for (const test of tests) { try {
 				const testSlug = slugify(test.name)
 				const testHash = computeTestHash(test)
 				const hashKey = `${suiteSlug}/${testSlug}`
@@ -407,7 +408,14 @@ export async function runCommand(
 				} else {
 					await context.close()
 				}
-			}
+			} catch (err) {
+				if (err instanceof LLMApiError) {
+					console.error(`\n  \x1b[31mLLM API returned ${String(err.status)} — aborting test run.\x1b[0m`)
+					console.error(`  ${err.message}\n`)
+					break
+				}
+				throw err
+			} }
 		} finally {
 			if (hashIndexDirty) {
 				await saveHashIndex(cwd, hashIndex)

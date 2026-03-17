@@ -5,6 +5,7 @@ import { createAnthropicProvider } from "./anthropic.js"
 import { createGeminiProvider } from "./gemini.js"
 
 export type { ChatMessage, ProviderConfig, LLMProvider } from "./types.js"
+export { LLMApiError } from "./types.js"
 
 /**
  * Factory: create an LLMProvider by name.

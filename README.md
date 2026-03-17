@@ -10,7 +10,7 @@ No selectors. No XPaths. No test IDs, drivers or glue code. Just describe what a
 
 ---
 
-**[How it works](#how-it-works)** | **[Quick start](#quick-start)** | **[Project configuration](#project-configuration)** | **[CLI](#cli)** | **[Test syntax](#test-syntax)** | **[Cached plans](#cached-plans)** | **[LLM setup](#llm-setup)** | **[Architecture](#architecture)** | **[CI/CD](#cicd)**
+**[How it works](#how-it-works)** | **[Quick start](#quick-start)** | **[Project configuration](#project-configuration)** | **[CLI](#cli)** | **[Test syntax](#test-syntax)** | **[Cached plans](#cached-plans)** | **[LLM setup](#llm-setup)** | **[Architecture](#architecture)** | **[Avoiding side effects](#avoiding-side-effects-in-your-app)** | **[CI/CD](#cicd)**
 
 ---
 
@@ -404,6 +404,43 @@ flowchart TD
 
 - [Specifications](docs/specifications.md) — full feature spec, technology decisions, MCP strategy
 - [Implementation Plan](docs/implementation.md) — step-by-step build plan
+
+## Avoiding side effects in your app
+
+GreenLight provides two signals that your application can use to detect when it's running under a test and suppress side effects like analytics, chat widgets, cookie banners, or third-party scripts that interfere with testing.
+
+### `window.__E2E_TEST__`
+
+A global boolean set to `true` on every page before any app JavaScript runs. Use it in your frontend code:
+
+```js
+if (!window.__E2E_TEST__) {
+  initAnalytics()
+  loadIntercom()
+  showCookieBanner()
+}
+```
+
+### `X-E2E-Test` HTTP header
+
+The header `X-E2E-Test: true` is sent on all same-origin requests (navigation, fetch, XHR). Use it server-side to skip side effects:
+
+```js
+// Express middleware example
+app.use((req, res, next) => {
+  if (req.headers['x-e2e-test'] === 'true') {
+    req.isE2ETest = true
+  }
+  next()
+})
+
+// Skip sending emails during E2E tests
+if (!req.isE2ETest) {
+  await sendConfirmationEmail(order)
+}
+```
+
+The header is only added to same-origin requests — cross-origin requests to CDNs, tile servers, and third-party APIs are not affected. This avoids triggering CORS preflight requests on external services.
 
 ## CI/CD
 

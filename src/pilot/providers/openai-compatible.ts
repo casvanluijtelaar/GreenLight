@@ -1,4 +1,4 @@
-import type { ChatMessage, LLMProvider, ProviderConfig } from "./types.js"
+import { type ChatMessage, type LLMProvider, type ProviderConfig, LLMApiError } from "./types.js"
 
 /**
  * OpenAI-compatible chat completions provider.
@@ -27,9 +27,7 @@ export function createOpenAICompatibleProvider(baseUrl: string): LLMProvider {
 
 			if (!response.ok) {
 				const body = await response.text()
-				throw new Error(
-					`LLM API error ${String(response.status)}: ${body}`,
-				)
+				throw new LLMApiError(response.status, body)
 			}
 
 			const data = (await response.json()) as {

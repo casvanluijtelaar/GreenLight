@@ -1,4 +1,4 @@
-import type { ChatMessage, LLMProvider, ProviderConfig } from "./types.js"
+import { type ChatMessage, type LLMProvider, type ProviderConfig, LLMApiError } from "./types.js"
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com"
 
@@ -60,9 +60,7 @@ export function createGeminiProvider(baseUrlOverride?: string): LLMProvider {
 
 			if (!response.ok) {
 				const respBody = await response.text()
-				throw new Error(
-					`LLM API error ${String(response.status)}: ${respBody}`,
-				)
+				throw new LLMApiError(response.status, respBody)
 			}
 
 			const data = (await response.json()) as {
