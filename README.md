@@ -146,7 +146,7 @@ greenlight run --plan-status            # show cache status for all tests
 greenlight run --on-drift rerun         # re-discover on cached plan drift (default: fail)
 ```
 
-## GreenLight philosopy compared to Gherkin/Cucumber
+## GreenLight philosophy compared to Gherkin/Cucumber
 
 Traditional BDD tools like Cucumber use **Gherkin** — a structured `Given/When/Then` syntax where every step requires a developer-written **step definition** (glue code) that maps the English phrase to actual browser automation with CSS selectors or XPaths.
 
@@ -155,10 +155,10 @@ GreenLight takes a different approach:
 | | GreenLight | Gherkin (Cucumber) |
 |---|---|---|
 | **Test language** | Freeform plain English | Structured `Given/When/Then` keywords |
-| **Element targeting** | AI resolves via accessibility tree + vision — no selectors | Developers write glue code with selectors/XPaths |
+| **Element targeting** | AI resolves via accessibility tree — no selectors | Developers write glue code with selectors/XPaths |
 | **Maintenance** | Tests survive UI refactors that don't change behavior | Selector changes break tests, requiring glue code updates |
 | **Authoring** | Non-technical testers, no code required | Readable specs, but developers must write step definitions |
-| **Determinism** | AI-based — small variability (<5% flake target) | Fully deterministic — same input, same execution path |
+| **Determinism** | Cached plans are deterministic; discovery runs have LLM variability | Fully deterministic — same input, same execution path |
 | **Maturity** | New, LLM-dependent | Battle-tested (15+ years), broad ecosystem |
 
 **In short:** Gherkin requires developers to bridge English and browser automation via step definitions. GreenLight uses AI as that bridge — eliminating the glue code layer at the cost of introducing LLM-dependent variability.
@@ -268,8 +268,9 @@ LLM_API_KEY=sk-... greenlight run tests/ --llm-base-url https://api.openai.com/v
 | Layer | Technology |
 |-------|-----------|
 | Browser automation | Playwright (Chromium) |
-| Page representation | Accessibility tree (primary) + screenshots (fallback) |
+| Page representation | Accessibility tree with stable element refs |
 | AI | OpenRouter (any OpenAI-compatible provider) |
+| Plan caching | SHA-256 hash-based invalidation, `.greenlight/plans/` |
 | Test definitions | YAML |
 | Language | TypeScript (Node.js, ESM) |
 
@@ -279,10 +280,10 @@ LLM_API_KEY=sk-... greenlight run tests/ --llm-base-url https://api.openai.com/v
 flowchart TD
     subgraph cli[greenlight CLI]
         yaml[YAML Parser]
-        reporter[Reporter<br/>CLI / JSON / HTML]
+        output[CLI Output<br/>step results, pass/fail]
 
-        subgraph runner[Test Runner]
-            orchestrator[Orchestration<br/>parallelism, setup/teardown]
+        subgraph runner[Test Orchestrator]
+            orchestrator[Run Loop<br/>suite loading, browser lifecycle,<br/>plan cache decisions]
             planner[Plan Cache<br/>.greenlight/plans/]
 
             subgraph pilot[The Pilot — discovery run]
@@ -302,15 +303,16 @@ flowchart TD
     yaml --> orchestrator
     orchestrator -->|no cache| pilot
     orchestrator -->|cached| replay
-    pilot -->|save plan| planner
-    planner -->|load plan| replay
+    orchestrator -->|save plan| planner
+    planner -->|load plan| orchestrator
     state --> llm
     llm --> executor
     state --> chromium
     executor --> chromium
     replay --> chromium
     chromium -->|page state| state
-    orchestrator --> reporter
+    chromium -->|page state| replay
+    orchestrator --> output
 ```
 
 **Discovery run:** capture page state (a11y tree with stable refs) → LLM determines action → execute via Playwright → record for cache.
