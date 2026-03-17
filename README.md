@@ -8,6 +8,12 @@ Natural language driven end-to-end testing for web applications. Write tests as 
 
 No selectors. No XPaths. No test IDs, drivers or glue code. Just describe what a user would do.
 
+---
+
+**[How it works](#how-it-works)** | **[Quick start](#quick-start)** | **[Project configuration](#project-configuration)** | **[CLI](#cli)** | **[Test syntax](#test-syntax)** | **[Cached plans](#cached-plans)** | **[LLM setup](#llm-setup)** | **[Architecture](#architecture)** | **[CI/CD](#cicd)**
+
+---
+
 ## How it works
 
 ```yaml
@@ -227,40 +233,91 @@ greenlight run --discover         # force fresh discovery, ignore cache
 greenlight run --plan-status      # show which tests have cached plans
 ```
 
-## Configuration
+## LLM setup
 
 ### API key
 
-Set your API key via environment variable or a `.env` file in the project root:
+Set your API key via the `LLM_API_KEY` environment variable or a `.env` file in the project root:
 
 ```bash
-OPENROUTER_API_KEY=sk-or-v1-...
+LLM_API_KEY=sk-...
 ```
 
-`LLM_API_KEY` is also supported as a generic fallback for non-OpenRouter providers.
+The same key is used regardless of provider. `OPENROUTER_API_KEY` is also accepted for backward compatibility.
+
+### Providers
+
+GreenLight supports four LLM providers with native API integrations:
+
+| Provider | Value | API |
+|----------|-------|-----|
+| [OpenRouter](https://openrouter.ai) | `openrouter` (default) | Access all models through a single API |
+| [OpenAI](https://platform.openai.com) | `openai` | GPT-4o, GPT-4o-mini, etc. |
+| [Google Gemini](https://ai.google.dev) | `gemini` | Gemini 2.5 Flash, Pro, etc. |
+| [Anthropic Claude](https://console.anthropic.com) | `claude` | Claude Sonnet, Haiku, etc. |
+
+Set the provider in `greenlight.yaml` or via CLI:
+
+```yaml
+provider: openai
+```
+
+```bash
+greenlight run --provider gemini
+```
+
+Only one provider is active at a time. OpenRouter is the default — it lets you access models from all vendors through a single API key, which is the easiest way to get started.
 
 ### Model selection
 
-The LLM model is configurable at multiple levels (highest priority first):
+GreenLight uses the LLM in two distinct roles with different requirements:
 
-| Level | How | Example |
-|-------|-----|---------|
-| CLI flag | `--model <id>` | `--model openai/gpt-4o` |
-| Suite YAML | `model` field | `model: "google/gemini-2.5-flash"` |
-| Deployment | `model` in deployment | see greenlight.yaml above |
-| Project config | `model` at top level | see greenlight.yaml above |
-| Default | — | `anthropic/claude-sonnet-4` via OpenRouter |
+- **Planner** — interprets the test steps, splits compound actions, and expands form-filling steps. This runs once per test case and benefits from a more capable model for consistent, correct results.
+- **Pilot** — resolves individual steps against the live page (picking which element to click/type). This runs many times per test and should use a fast, inexpensive model to keep costs and execution time low.
+
+Configure both in `greenlight.yaml`:
+
+```yaml
+provider: openrouter
+model:
+  planner: anthropic/claude-sonnet-4      # smarter model, runs once per test
+  pilot: openai/gpt-4o-mini              # fast model, runs per step
+```
+
+Or use a single model for both roles:
+
+```yaml
+model: anthropic/claude-sonnet-4
+```
+
+The `--model` CLI flag sets both roles to the same model (useful for quick overrides):
+
+```bash
+greenlight run --model openai/gpt-4o
+```
+
+Model names must match the provider's naming convention:
+
+| Provider | Example model names |
+|----------|-------------------|
+| OpenRouter | `anthropic/claude-sonnet-4`, `openai/gpt-4o-mini`, `google/gemini-2.5-flash` |
+| OpenAI | `gpt-4o`, `gpt-4o-mini` |
+| Gemini | `gemini-2.5-flash`, `gemini-2.5-pro` |
+| Claude | `claude-sonnet-4-20250514`, `claude-haiku-4-20250514` |
 
 ### Custom LLM endpoint
 
-GreenLight uses the OpenAI-compatible chat completions API. By default it points to OpenRouter, but you can use any compatible provider:
+Each provider has a default API endpoint. You can override it with `llm_base_url` for proxies, self-hosted models, or compatible APIs:
+
+```yaml
+# Local Ollama (OpenAI-compatible)
+provider: openai
+llm_base_url: http://localhost:11434/v1
+model: llama3
+```
 
 ```bash
-# Local Ollama
-greenlight run tests/ --llm-base-url http://localhost:11434/v1 --model llama3
-
-# Direct OpenAI
-LLM_API_KEY=sk-... greenlight run tests/ --llm-base-url https://api.openai.com/v1 --model gpt-4o
+greenlight run --provider openai --llm-base-url http://localhost:11434/v1 --model llama3
 ```
 
 ## Tech stack

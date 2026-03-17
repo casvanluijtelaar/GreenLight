@@ -5,7 +5,7 @@
 import type { PageState } from "../reporter/types.js"
 import { formatA11yTree } from "./a11y-parser.js"
 import { SYSTEM_PROMPT } from "./prompts.js"
-import type { ChatMessage } from "./llm.js"
+import type { ChatMessage } from "./providers/types.js"
 
 /** Build the user message containing the step and full page state. */
 export function buildUserMessage(step: string, pageState: PageState): string {

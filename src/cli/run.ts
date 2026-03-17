@@ -28,6 +28,7 @@ import { createPlanRecorder } from "../planner/plan-generator.js"
 import { runCachedPlan } from "../planner/plan-runner.js"
 import type { TestCaseResult } from "../reporter/types.js"
 import type { RunConfig } from "../types.js"
+import { resolveModelConfig } from "../types.js"
 import { globals } from "../globals.js"
 
 /** Print step-by-step results for a test case. */
@@ -155,10 +156,18 @@ export async function runCommand(
 		// Apply suite-level model override
 		const effectiveModel = suite.model ?? config.model
 		const suiteSlug = slugify(suite.suite)
+		const resolved = resolveModelConfig(effectiveModel)
 
 		console.log(`\nSuite: ${suite.suite}`)
 		console.log(`URL:   ${baseUrl}`)
-		console.log(`Model: ${effectiveModel}`)
+		console.log(`Provider: ${config.provider}`)
+		if (resolved.planner === resolved.pilot) {
+			console.log(`Model: ${resolved.planner}`)
+		} else {
+			console.log(
+				`Model: planner=${resolved.planner}, pilot=${resolved.pilot}`,
+			)
+		}
 
 		// Load hash index for plan caching
 		const hashIndex = await loadHashIndex(cwd)
@@ -281,11 +290,15 @@ export async function runCommand(
 						globals.trace.attachToPage(page2)
 						await page2.goto(suite.base_url)
 
+						const modelLabel =
+							typeof effectiveModel === "string"
+								? effectiveModel
+								: `${effectiveModel.planner}/${effectiveModel.pilot}`
 						const recorder = createPlanRecorder(
 							suiteSlug,
 							testSlug,
 							testHash,
-							effectiveModel,
+							modelLabel,
 						)
 						result = await runTestCase(
 							page2,
@@ -324,11 +337,15 @@ export async function runCommand(
 					}
 				} else {
 					// Discovery run — full LLM loop with recorder
+					const discoveryModelLabel =
+						typeof effectiveModel === "string"
+							? effectiveModel
+							: `${effectiveModel.planner}/${effectiveModel.pilot}`
 					const recorder = createPlanRecorder(
 						suiteSlug,
 						testSlug,
 						testHash,
-						effectiveModel,
+						discoveryModelLabel,
 					)
 
 					result = await runTestCase(

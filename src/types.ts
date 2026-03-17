@@ -8,6 +8,15 @@ export interface Viewport {
 	height: number
 }
 
+/** Supported LLM provider identifiers. */
+export type Provider = "openrouter" | "openai" | "gemini" | "claude"
+
+/** Per-role model configuration (planner vs pilot can use different models). */
+export interface ModelConfig {
+	planner: string
+	pilot: string
+}
+
 /** Runtime configuration resolved from CLI args + suite config. */
 export interface RunConfig {
 	/** Path(s) to suite YAML files. */
@@ -28,14 +37,24 @@ export interface RunConfig {
 	timeout: number
 	/** Browser viewport dimensions. */
 	viewport: Viewport
-	/** LLM model identifier (e.g. "anthropic/claude-sonnet-4"). */
-	model: string
-	/** Base URL for the OpenAI-compatible LLM API. */
-	llmBaseUrl: string
+	/** LLM model identifier or per-role config. */
+	model: string | ModelConfig
+	/** LLM provider to use. */
+	provider: Provider
+	/** Base URL for the LLM API (optional override). */
+	llmBaseUrl?: string
 	/** Force a full discovery run, ignoring cached plans. */
 	discover: boolean
 	/** Behavior on plan drift: "fail" (default) or "rerun" with LLM. */
 	onDrift: "fail" | "rerun"
+}
+
+/** Resolve a model string or ModelConfig into a full ModelConfig. */
+export function resolveModelConfig(model: string | ModelConfig): ModelConfig {
+	if (typeof model === "string") {
+		return { planner: model, pilot: model }
+	}
+	return model
 }
 
 /** Default configuration values. */
@@ -47,7 +66,7 @@ export const DEFAULTS: Pick<
 	| "timeout"
 	| "viewport"
 	| "model"
-	| "llmBaseUrl"
+	| "provider"
 	| "discover"
 	| "onDrift"
 > = {
@@ -57,7 +76,7 @@ export const DEFAULTS: Pick<
 	timeout: 30_000,
 	viewport: { width: 1280, height: 720 },
 	model: "anthropic/claude-sonnet-4",
-	llmBaseUrl: "https://openrouter.ai/api/v1",
+	provider: "openrouter",
 	discover: false,
 	onDrift: "fail",
 }

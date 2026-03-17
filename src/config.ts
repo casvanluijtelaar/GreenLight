@@ -14,7 +14,13 @@ import { z } from "zod"
 /** Fields that can appear at the top level or inside a deployment. */
 const ConfigFieldsSchema = z.object({
 	base_url: z.string().optional(),
-	model: z.string().min(1).optional(),
+	model: z
+		.union([
+			z.string().min(1),
+			z.object({ planner: z.string().min(1), pilot: z.string().min(1) }),
+		])
+		.optional(),
+	provider: z.enum(["openrouter", "openai", "gemini", "claude"]).optional(),
 	llm_base_url: z.string().optional(),
 	timeout: z.number().int().positive().optional(),
 	headed: z.boolean().optional(),

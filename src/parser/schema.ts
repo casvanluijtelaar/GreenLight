@@ -23,7 +23,12 @@ export const SuiteSchema = z.object({
 	suite: z.string().min(1),
 	base_url: z.url().optional(),
 	viewport: ViewportSchema.optional(),
-	model: z.string().min(1).optional(),
+	model: z
+		.union([
+			z.string().min(1),
+			z.object({ planner: z.string().min(1), pilot: z.string().min(1) }),
+		])
+		.optional(),
 	variables: z.record(z.string(), z.string()).optional(),
 	reusable_steps: z.record(z.string(), z.array(z.string().min(1))).optional(),
 	tests: z.array(TestCaseSchema).min(1),

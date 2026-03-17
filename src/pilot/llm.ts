@@ -1,31 +1,36 @@
 /**
- * Provider-agnostic LLM client using the OpenAI-compatible chat completions API.
- * Default backend: OpenRouter. Works with any OpenAI-compatible endpoint.
+ * Provider-agnostic LLM client.
+ * Uses pluggable providers for chat completions.
  */
 
 import type { RunConfig } from "../types.js"
+import { resolveModelConfig } from "../types.js"
 import type { Action, PageState } from "../reporter/types.js"
 import { formatA11yTree } from "./a11y-parser.js"
 import { captureFormFields, formatFormFields } from "./form-fields.js"
 import type { Page } from "playwright"
 import { globals } from "../globals.js"
 
-import { SYSTEM_PROMPT, PLAN_SYSTEM_PROMPT, EXPAND_SYSTEM_PROMPT } from "./prompts.js"
+import {
+	SYSTEM_PROMPT,
+	PLAN_SYSTEM_PROMPT,
+	EXPAND_SYSTEM_PROMPT,
+} from "./prompts.js"
 import { buildUserMessage, buildCompactMessage } from "./message-builder.js"
 import { parseActionResponse, parsePlanResponse } from "./response-parser.js"
 import type { PlannedStep } from "./response-parser.js"
+import type { ChatMessage, LLMProvider } from "./providers/index.js"
+import { createProvider } from "./providers/index.js"
+
+/** Re-export ChatMessage so existing imports still work. */
+export type { ChatMessage } from "./providers/index.js"
 
 /** Configuration for the LLM client. */
 export interface LLMClientConfig {
 	apiKey: string
-	baseUrl: string
-	model: string
-}
-
-/** A chat message in the OpenAI format. */
-export interface ChatMessage {
-	role: "system" | "user" | "assistant"
-	content: string
+	provider: LLMProvider
+	plannerModel: string
+	pilotModel: string
 }
 
 /** The LLM client interface. */
@@ -54,10 +59,10 @@ export interface LLMClient {
 
 /** Resolve the API key from environment variables. */
 export function resolveApiKey(): string {
-	const key = process.env.OPENROUTER_API_KEY ?? process.env.LLM_API_KEY
+	const key = process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY
 	if (!key) {
 		throw new Error(
-			"No API key found. Set OPENROUTER_API_KEY or LLM_API_KEY environment variable.",
+			"No API key found. Set LLM_API_KEY or OPENROUTER_API_KEY environment variable.",
 		)
 	}
 	return key
@@ -65,10 +70,16 @@ export function resolveApiKey(): string {
 
 /** Resolve LLM client config from RunConfig and environment. */
 export function resolveLLMConfig(runConfig: RunConfig): LLMClientConfig {
+	const modelConfig = resolveModelConfig(runConfig.model)
+	const provider = createProvider(
+		runConfig.provider,
+		runConfig.llmBaseUrl,
+	)
 	return {
 		apiKey: resolveApiKey(),
-		baseUrl: runConfig.llmBaseUrl,
-		model: runConfig.model,
+		provider,
+		plannerModel: modelConfig.planner,
+		pilotModel: modelConfig.pilot,
 	}
 }
 
@@ -79,41 +90,19 @@ export function resolveLLMConfig(runConfig: RunConfig): LLMClientConfig {
  * Call resetHistory() between test cases.
  */
 export function createLLMClient(config: LLMClientConfig): LLMClient {
-	const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`
 	let history: ChatMessage[] = []
 	const cache = new Map<string, Action>()
 	let prevPageState: PageState | null = null
 	let prevFormattedTree = ""
 
-	async function chatCompletion(messages: ChatMessage[]): Promise<string> {
-		const response = await fetch(endpoint, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${config.apiKey}`,
-			},
-			body: JSON.stringify({
-				model: config.model,
-				messages,
-				temperature: 0,
-			}),
+	async function chat(
+		messages: ChatMessage[],
+		model: string,
+	): Promise<string> {
+		return config.provider.chatCompletion(messages, {
+			apiKey: config.apiKey,
+			model,
 		})
-
-		if (!response.ok) {
-			const body = await response.text()
-			throw new Error(`LLM API error ${String(response.status)}: ${body}`)
-		}
-
-		const data = (await response.json()) as {
-			choices: { message: { content: string } }[]
-		}
-
-		const content = data.choices[0]?.message?.content
-		if (!content) {
-			throw new Error("LLM returned empty response")
-		}
-
-		return content
 	}
 
 	return {
@@ -128,10 +117,13 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 				.map((s, i) => `${String(i + 1)}. ${s}`)
 				.join("\n")
 
-			const content = await chatCompletion([
-				{ role: "system", content: PLAN_SYSTEM_PROMPT },
-				{ role: "user", content: userMessage },
-			])
+			const content = await chat(
+				[
+					{ role: "system", content: PLAN_SYSTEM_PROMPT },
+					{ role: "user", content: userMessage },
+				],
+				config.plannerModel,
+			)
 
 			return parsePlanResponse(content)
 		},
@@ -152,7 +144,8 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 				for (const f of formFields) {
 					const parts: string[] = [`        <${f.tag}>`]
 					if (f.label) parts.push(`label="${f.label}"`)
-					if (f.placeholder) parts.push(`placeholder="${f.placeholder}"`)
+					if (f.placeholder)
+						parts.push(`placeholder="${f.placeholder}"`)
 					parts.push(`type="${f.inputType}"`)
 					if (f.required) parts.push("[required]")
 					if (f.autocomplete) parts.push("[autocomplete]")
@@ -188,13 +181,18 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 			].join("\n")
 
 			if (globals.debug) {
-				console.log(`      [expand] Sending expansion request to LLM...`)
+				console.log(
+					`      [expand] Sending expansion request to LLM...`,
+				)
 			}
 
-			const content = await chatCompletion([
-				{ role: "system", content: EXPAND_SYSTEM_PROMPT },
-				{ role: "user", content: userMessage },
-			])
+			const content = await chat(
+				[
+					{ role: "system", content: EXPAND_SYSTEM_PROMPT },
+					{ role: "user", content: userMessage },
+				],
+				config.plannerModel,
+			)
 
 			if (globals.debug) {
 				console.log(`      [expand] LLM raw response:`)
@@ -210,7 +208,9 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 					`      [expand] Parsed into ${String(expanded.length)} sub-steps:`,
 				)
 				for (const es of expanded) {
-					const label = es.action ? JSON.stringify(es.action) : "(needs page)"
+					const label = es.action
+						? JSON.stringify(es.action)
+						: "(needs page)"
 					console.log(`        - ${es.step} → ${label}`)
 				}
 			}
@@ -230,7 +230,10 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 			return expanded
 		},
 
-		async resolveStep(step: string, pageState: PageState): Promise<Action> {
+		async resolveStep(
+			step: string,
+			pageState: PageState,
+		): Promise<Action> {
 			// Check cache: same step on same page → same action
 			const cacheKey = `${step}\0${pageState.url}`
 			const cached = cache.get(cacheKey)
@@ -273,7 +276,7 @@ export function createLLMClient(config: LLMClientConfig): LLMClient {
 				{ role: "user", content: userMessage },
 			]
 
-			const content = await chatCompletion(messages)
+			const content = await chat(messages, config.pilotModel)
 			const action = parseActionResponse(content)
 
 			// Cache the result for identical future requests

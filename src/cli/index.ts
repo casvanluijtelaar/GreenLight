@@ -2,7 +2,7 @@
 
 import "dotenv/config"
 import { Command } from "commander"
-import { DEFAULTS, type RunConfig } from "../types.js"
+import { DEFAULTS, type RunConfig, type Provider } from "../types.js"
 import { loadProjectConfig } from "../config.js"
 import { createTraceLogger } from "../pilot/trace.js"
 import { resolve } from "node:path"
@@ -35,7 +35,11 @@ program
 		"--model <model>",
 		"LLM model identifier (e.g. anthropic/claude-sonnet-4)",
 	)
-	.option("--llm-base-url <url>", "base URL for the OpenAI-compatible LLM API")
+	.option("--llm-base-url <url>", "base URL for the LLM API (override)")
+	.option(
+		"--provider <name>",
+		"LLM provider: openrouter, openai, gemini, or claude",
+	)
 	.option(
 		"-d, --deployment <name>",
 		"select a named deployment from greenlight.yaml",
@@ -69,6 +73,7 @@ program
 				timeout?: string
 				model?: string
 				llmBaseUrl?: string
+				provider?: string
 				deployment?: string
 				debug: boolean
 				trace: boolean
@@ -113,10 +118,13 @@ program
 					? { ...projectConfig.viewport }
 					: { ...DEFAULTS.viewport },
 				model: opts.model ?? projectConfig?.model ?? DEFAULTS.model,
+				provider: parseProvider(
+					opts.provider ??
+						projectConfig?.provider ??
+						DEFAULTS.provider,
+				),
 				llmBaseUrl:
-					opts.llmBaseUrl ??
-					projectConfig?.llm_base_url ??
-					DEFAULTS.llmBaseUrl,
+					opts.llmBaseUrl ?? projectConfig?.llm_base_url,
 				discover: opts.discover,
 				onDrift: parseOnDrift(opts.onDrift ?? DEFAULTS.onDrift),
 			}
@@ -144,6 +152,21 @@ program
 			await runCommand(config, resolvedFiles)
 		},
 	)
+
+function parseProvider(value: string): Provider {
+	if (
+		value === "openrouter" ||
+		value === "openai" ||
+		value === "gemini" ||
+		value === "claude"
+	) {
+		return value
+	}
+	console.error(
+		`Invalid provider "${value}". Must be openrouter, openai, gemini, or claude.`,
+	)
+	process.exit(1)
+}
 
 function parseReporter(value: string): RunConfig["reporter"] {
 	if (value === "cli" || value === "json" || value === "html") {

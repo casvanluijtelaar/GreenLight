@@ -18,6 +18,7 @@ describe("toBrowserOptions", () => {
 			timeout: 30000,
 			viewport: { width: 800, height: 600 },
 			model: "anthropic/claude-sonnet-4",
+			provider: "openrouter",
 			llmBaseUrl: "https://openrouter.ai/api/v1",
 		}
 		const opts = toBrowserOptions(config)

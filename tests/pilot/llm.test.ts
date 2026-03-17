@@ -10,6 +10,7 @@ import { SYSTEM_PROMPT } from "../../src/pilot/prompts.js"
 import type { PageState } from "../../src/reporter/types.js"
 import type { RunConfig } from "../../src/types.js"
 import { DEFAULTS } from "../../src/types.js"
+import type { LLMProvider } from "../../src/pilot/providers/index.js"
 
 const mockPageState: PageState = {
 	a11yTree: [
@@ -37,6 +38,18 @@ const mockPageState: PageState = {
 	url: "https://staging.example.com/login",
 	title: "Login — Example",
 	consoleLogs: [],
+}
+
+/** Create a mock LLMProvider that returns the given content. */
+function createMockProvider(
+	responseFn: (...args: unknown[]) => string | Promise<string>,
+): LLMProvider {
+	return {
+		chatCompletion: vi.fn().mockImplementation(() => {
+			const result = responseFn()
+			return Promise.resolve(result)
+		}),
+	}
 }
 
 describe("buildUserMessage", () => {
@@ -140,20 +153,20 @@ describe("resolveApiKey", () => {
 		process.env = originalEnv
 	})
 
-	it("reads OPENROUTER_API_KEY", () => {
-		process.env.OPENROUTER_API_KEY = "sk-or-test"
-		expect(resolveApiKey()).toBe("sk-or-test")
-	})
-
-	it("falls back to LLM_API_KEY", () => {
+	it("reads LLM_API_KEY", () => {
 		process.env.LLM_API_KEY = "sk-generic"
 		expect(resolveApiKey()).toBe("sk-generic")
 	})
 
-	it("prefers OPENROUTER_API_KEY over LLM_API_KEY", () => {
-		process.env.OPENROUTER_API_KEY = "sk-or"
+	it("falls back to OPENROUTER_API_KEY", () => {
+		process.env.OPENROUTER_API_KEY = "sk-or-test"
+		expect(resolveApiKey()).toBe("sk-or-test")
+	})
+
+	it("prefers LLM_API_KEY over OPENROUTER_API_KEY", () => {
 		process.env.LLM_API_KEY = "sk-gen"
-		expect(resolveApiKey()).toBe("sk-or")
+		process.env.OPENROUTER_API_KEY = "sk-or"
+		expect(resolveApiKey()).toBe("sk-gen")
 	})
 
 	it("throws when no key is set", () => {
@@ -166,7 +179,7 @@ describe("resolveLLMConfig", () => {
 
 	beforeEach(() => {
 		process.env = { ...originalEnv }
-		process.env.OPENROUTER_API_KEY = "sk-test"
+		process.env.LLM_API_KEY = "sk-test"
 	})
 
 	afterEach(() => {
@@ -178,76 +191,64 @@ describe("resolveLLMConfig", () => {
 			...DEFAULTS,
 			suiteFiles: [],
 			model: "openai/gpt-4o",
-			llmBaseUrl: "https://openrouter.ai/api/v1",
+			provider: "openrouter",
 		}
 		const config = resolveLLMConfig(runConfig)
 		expect(config.apiKey).toBe("sk-test")
-		expect(config.model).toBe("openai/gpt-4o")
-		expect(config.baseUrl).toBe("https://openrouter.ai/api/v1")
+		expect(config.plannerModel).toBe("openai/gpt-4o")
+		expect(config.pilotModel).toBe("openai/gpt-4o")
+		expect(config.provider).toBeDefined()
+	})
+
+	it("resolves ModelConfig with different planner/pilot", () => {
+		const runConfig: RunConfig = {
+			...DEFAULTS,
+			suiteFiles: [],
+			model: { planner: "openai/gpt-4o", pilot: "openai/gpt-4o-mini" },
+			provider: "openai",
+		}
+		const config = resolveLLMConfig(runConfig)
+		expect(config.plannerModel).toBe("openai/gpt-4o")
+		expect(config.pilotModel).toBe("openai/gpt-4o-mini")
 	})
 })
 
 describe("createLLMClient", () => {
-	const originalFetch = globalThis.fetch
-
-	afterEach(() => {
-		globalThis.fetch = originalFetch
-	})
-
 	it("sends correct request and parses response", async () => {
-		globalThis.fetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: () =>
-				Promise.resolve({
-					choices: [
-						{
-							message: {
-								content: '{"action":"click","ref":"e3"}',
-							},
-						},
-					],
-				}),
-		})
+		const provider = createMockProvider(
+			() => '{"action":"click","ref":"e3"}',
+		)
 
 		const client = createLLMClient({
 			apiKey: "sk-test",
-			baseUrl: "https://openrouter.ai/api/v1",
-			model: "anthropic/claude-sonnet-4",
+			provider,
+			plannerModel: "anthropic/claude-sonnet-4",
+			pilotModel: "anthropic/claude-sonnet-4",
 		})
 
 		const action = await client.resolveStep('click "Sign In"', mockPageState)
 		expect(action).toEqual({ action: "click", ref: "e3" })
 
-		const fetchCall = vi.mocked(fetch).mock.calls[0]
-		expect(fetchCall[0]).toBe("https://openrouter.ai/api/v1/chat/completions")
-
-		const requestInit = fetchCall[1]!
-		expect(requestInit.method).toBe("POST")
-
-		const headers = requestInit.headers as Record<string, string>
-		expect(headers.Authorization).toBe("Bearer sk-test")
-
-		const body = JSON.parse(requestInit.body as string) as {
-			model: string
-			messages: { role: string; content: string }[]
-			temperature: number
-		}
-		expect(body.model).toBe("anthropic/claude-sonnet-4")
-		expect(body.messages).toHaveLength(2)
-		expect(body.temperature).toBe(0)
+		// Verify provider was called with correct model
+		expect(provider.chatCompletion).toHaveBeenCalledTimes(1)
+		const call = vi.mocked(provider.chatCompletion).mock.calls[0]
+		expect(call[1].model).toBe("anthropic/claude-sonnet-4")
+		expect(call[1].apiKey).toBe("sk-test")
+		expect(call[0]).toHaveLength(2) // system + user
 	})
 
-	it("throws on API error", async () => {
-		globalThis.fetch = vi.fn().mockResolvedValue({
-			ok: false,
-			status: 401,
-			text: () => Promise.resolve("Unauthorized"),
-		})
+	it("throws on provider error", async () => {
+		const provider: LLMProvider = {
+			chatCompletion: vi
+				.fn()
+				.mockRejectedValue(new Error("LLM API error 401: Unauthorized")),
+		}
 
 		const client = createLLMClient({
 			apiKey: "bad-key",
-			baseUrl: "https://openrouter.ai/api/v1",
-			model: "anthropic/claude-sonnet-4",
+			provider,
+			plannerModel: "anthropic/claude-sonnet-4",
+			pilotModel: "anthropic/claude-sonnet-4",
 		})
 
 		await expect(
@@ -256,47 +257,22 @@ describe("createLLMClient", () => {
 	})
 
 	it("throws on empty response", async () => {
-		globalThis.fetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: () => Promise.resolve({ choices: [] }),
-		})
+		const provider: LLMProvider = {
+			chatCompletion: vi
+				.fn()
+				.mockRejectedValue(new Error("LLM returned empty response")),
+		}
 
 		const client = createLLMClient({
 			apiKey: "sk-test",
-			baseUrl: "https://openrouter.ai/api/v1",
-			model: "anthropic/claude-sonnet-4",
+			provider,
+			plannerModel: "anthropic/claude-sonnet-4",
+			pilotModel: "anthropic/claude-sonnet-4",
 		})
 
 		await expect(
 			client.resolveStep('click "Sign In"', mockPageState),
 		).rejects.toThrow("LLM returned empty response")
-	})
-
-	it("strips trailing slash from base URL", async () => {
-		globalThis.fetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: () =>
-				Promise.resolve({
-					choices: [
-						{
-							message: {
-								content: '{"action":"click","ref":"e1"}',
-							},
-						},
-					],
-				}),
-		})
-
-		const client = createLLMClient({
-			apiKey: "sk-test",
-			baseUrl: "https://openrouter.ai/api/v1/",
-			model: "test-model",
-		})
-
-		await client.resolveStep("click something", mockPageState)
-
-		const fetchCall = vi.mocked(fetch).mock.calls[0]
-		expect(fetchCall[0]).toBe("https://openrouter.ai/api/v1/chat/completions")
 	})
 
 	it("planSteps sends all steps and parses response", async () => {
@@ -306,18 +282,14 @@ describe("createLLMClient", () => {
 			'navigate "/about"',
 			'PAGE "type hello into the search field"',
 		].join("\n")
-		globalThis.fetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: () =>
-				Promise.resolve({
-					choices: [{ message: { content: planText } }],
-				}),
-		})
+
+		const provider = createMockProvider(() => planText)
 
 		const client = createLLMClient({
 			apiKey: "sk-test",
-			baseUrl: "https://openrouter.ai/api/v1",
-			model: "test-model",
+			provider,
+			plannerModel: "test-planner",
+			pilotModel: "test-pilot",
 		})
 
 		const plan = await client.planSteps([
@@ -338,102 +310,81 @@ describe("createLLMClient", () => {
 			value: "/about",
 		})
 		expect(plan[3].action).toBeNull()
-		expect(fetch).toHaveBeenCalledTimes(1)
+		expect(provider.chatCompletion).toHaveBeenCalledTimes(1)
+
+		// Verify planner model was used
+		const call = vi.mocked(provider.chatCompletion).mock.calls[0]
+		expect(call[1].model).toBe("test-planner")
 	})
 
 	it("accumulates conversation history across calls", async () => {
-		globalThis.fetch = vi
-			.fn()
-			.mockResolvedValueOnce({
-				ok: true,
-				json: () =>
-					Promise.resolve({
-						choices: [
-							{ message: { content: '{"action":"click","ref":"e1"}' } },
-						],
-					}),
-			})
-			.mockResolvedValueOnce({
-				ok: true,
-				json: () =>
-					Promise.resolve({
-						choices: [
-							{ message: { content: '{"action":"click","ref":"e2"}' } },
-						],
-					}),
-			})
+		let callCount = 0
+		const provider: LLMProvider = {
+			chatCompletion: vi.fn().mockImplementation(() => {
+				callCount++
+				if (callCount === 1)
+					return Promise.resolve('{"action":"click","ref":"e1"}')
+				return Promise.resolve('{"action":"click","ref":"e2"}')
+			}),
+		}
 
 		const client = createLLMClient({
 			apiKey: "sk-test",
-			baseUrl: "https://openrouter.ai/api/v1",
-			model: "test-model",
+			provider,
+			plannerModel: "test-model",
+			pilotModel: "test-model",
 		})
 
 		await client.resolveStep('click "Home"', mockPageState)
 		await client.resolveStep('click "About"', mockPageState)
 
 		// Second call should include history from first call
-		const secondCall = vi.mocked(fetch).mock.calls[1]
-		const body = JSON.parse(secondCall[1]?.body as string) as {
-			messages: { role: string }[]
-		}
+		const secondCall = vi.mocked(provider.chatCompletion).mock.calls[1]
+		const messages = secondCall[0]
 		// system + user1 + assistant1 + user2 = 4 messages
-		expect(body.messages).toHaveLength(4)
-		expect(body.messages[0].role).toBe("system")
-		expect(body.messages[1].role).toBe("user")
-		expect(body.messages[2].role).toBe("assistant")
-		expect(body.messages[3].role).toBe("user")
+		expect(messages).toHaveLength(4)
+		expect(messages[0].role).toBe("system")
+		expect(messages[1].role).toBe("user")
+		expect(messages[2].role).toBe("assistant")
+		expect(messages[3].role).toBe("user")
 	})
 
 	it("returns cached result for identical step and page state", async () => {
-		globalThis.fetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: () =>
-				Promise.resolve({
-					choices: [{ message: { content: '{"action":"click","ref":"e1"}' } }],
-				}),
-		})
+		const provider = createMockProvider(
+			() => '{"action":"click","ref":"e1"}',
+		)
 
 		const client = createLLMClient({
 			apiKey: "sk-test",
-			baseUrl: "https://openrouter.ai/api/v1",
-			model: "test-model",
+			provider,
+			plannerModel: "test-model",
+			pilotModel: "test-model",
 		})
 
 		const first = await client.resolveStep('click "Home"', mockPageState)
 		const second = await client.resolveStep('click "Home"', mockPageState)
 
 		expect(first).toEqual(second)
-		// Only one fetch call — second was served from cache
-		expect(fetch).toHaveBeenCalledTimes(1)
+		// Only one call — second was served from cache
+		expect(provider.chatCompletion).toHaveBeenCalledTimes(1)
 	})
 
 	it("does not use cache when URL differs", async () => {
-		globalThis.fetch = vi
-			.fn()
-			.mockResolvedValueOnce({
-				ok: true,
-				json: () =>
-					Promise.resolve({
-						choices: [
-							{ message: { content: '{"action":"click","ref":"e1"}' } },
-						],
-					}),
-			})
-			.mockResolvedValueOnce({
-				ok: true,
-				json: () =>
-					Promise.resolve({
-						choices: [
-							{ message: { content: '{"action":"click","ref":"e5"}' } },
-						],
-					}),
-			})
+		let callCount = 0
+		const provider: LLMProvider = {
+			chatCompletion: vi.fn().mockImplementation(() => {
+				callCount++
+				if (callCount === 1)
+					return Promise.resolve('{"action":"click","ref":"e1"}')
+				return Promise.resolve('{"action":"click","ref":"e5"}')
+			}),
+		}
 
 		const client = createLLMClient({
 			apiKey: "sk-test",
-			baseUrl: "https://openrouter.ai/api/v1",
-			model: "test-model",
+			provider,
+			plannerModel: "test-model",
+			pilotModel: "test-model",
 		})
 
 		await client.resolveStep('click "Home"', mockPageState)
@@ -442,35 +393,57 @@ describe("createLLMClient", () => {
 			url: "https://staging.example.com/other",
 		})
 
-		// Different page state → two fetch calls
-		expect(fetch).toHaveBeenCalledTimes(2)
+		// Different page state → two calls
+		expect(provider.chatCompletion).toHaveBeenCalledTimes(2)
 	})
 
 	it("clears history on resetHistory", async () => {
-		globalThis.fetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: () =>
-				Promise.resolve({
-					choices: [{ message: { content: '{"action":"click","ref":"e1"}' } }],
-				}),
-		})
+		const provider = createMockProvider(
+			() => '{"action":"click","ref":"e1"}',
+		)
 
 		const client = createLLMClient({
 			apiKey: "sk-test",
-			baseUrl: "https://openrouter.ai/api/v1",
-			model: "test-model",
+			provider,
+			plannerModel: "test-model",
+			pilotModel: "test-model",
 		})
 
 		await client.resolveStep('click "Home"', mockPageState)
 		client.resetHistory()
 		await client.resolveStep('click "About"', mockPageState)
 
-		const secondCall = vi.mocked(fetch).mock.calls[1]
-		const body = JSON.parse(secondCall[1]?.body as string) as {
-			messages: { role: string }[]
-		}
+		const secondCall = vi.mocked(provider.chatCompletion).mock.calls[1]
+		const messages = secondCall[0]
 		// After reset: system + user = 2 messages (no history)
-		expect(body.messages).toHaveLength(2)
+		expect(messages).toHaveLength(2)
+	})
+
+	it("uses pilotModel for resolveStep and plannerModel for planSteps", async () => {
+		let callCount = 0
+		const provider: LLMProvider = {
+			chatCompletion: vi.fn().mockImplementation(() => {
+				callCount++
+				if (callCount === 1)
+					return Promise.resolve('PAGE "click something"')
+				return Promise.resolve('{"action":"click","ref":"e1"}')
+			}),
+		}
+
+		const client = createLLMClient({
+			apiKey: "sk-test",
+			provider,
+			plannerModel: "big-model",
+			pilotModel: "small-model",
+		})
+
+		await client.planSteps(["click something"])
+		const planCall = vi.mocked(provider.chatCompletion).mock.calls[0]
+		expect(planCall[1].model).toBe("big-model")
+
+		await client.resolveStep("click something", mockPageState)
+		const resolveCall = vi.mocked(provider.chatCompletion).mock.calls[1]
+		expect(resolveCall[1].model).toBe("small-model")
 	})
 })
 
