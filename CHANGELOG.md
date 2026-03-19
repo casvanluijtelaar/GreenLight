@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-03-19
+
+### Added
+
+- **Scroll to top/bottom/element** — the `scroll` action now supports `"top"` and `"bottom"` to jump to the start or end of the page, and element targeting via `ref` or `text` to scroll a specific element into view. The planner resolves `scroll to top/bottom` statically and routes `scroll to <element>` through the pilot for live page resolution.
+- **Viewport assertions** — new `element_in_viewport` / `element_not_in_viewport` assertion types check whether an element is within the visible browser viewport at the current scroll position. Uses `getBoundingClientRect()` intersection with the window dimensions. Useful after scroll actions to verify an element was scrolled into (or out of) view.
+
 ## [0.5.0] - 2026-03-19
 
 ### Added
