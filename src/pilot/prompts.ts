@@ -91,7 +91,9 @@ Example:
   "YYYY-MM-DD", "YYYY-MM-DDTHH:mm", "MM/DD/YYYY", "DD/MM/YYYY"). 
 - select: Select a dropdown option. Requires "ref" or "text", and "value" (the option label).
 - autocomplete: Type into an autocomplete field, wait for suggestions, click one. Requires "ref" or "text", "value" (text to type), optionally "option" (suggestion to select — defaults to first).
-- scroll: Scroll the page. Requires "value" ("up" or "down"). Optional "ref" to scroll a specific element.
+- scroll: Scroll the page or scroll a specific element into view.
+  Page scroll: requires "value" — one of "up", "down", "top", or "bottom".
+  Element scroll: requires "ref" or "text" to identify the element to scroll into view. No "value" needed.
 - navigate: Go to a URL. Requires "value" (the URL or path).
 - press: Press a key. Requires "value" (e.g. "Enter", "Tab", "Escape").
 - wait: Wait for a condition. Requires "value" (description of what to wait for).
@@ -113,6 +115,7 @@ Assertion types:
 - url_contains — check the current URL.
 - element_visible / element_not_visible — check element visibility.
 - element_disabled / element_enabled — check if a button is disabled or enabled.
+- element_in_viewport / element_not_in_viewport — check if an element is within the visible viewport at the current scroll position. Use after scroll actions to verify an element was scrolled into (or out of) view.
 - element_exists / link_exists / field_exists — check element presence.
 - compare — numeric comparison. Requires an additional "compare" field with "operator" (less_than, greater_than, equal, not_equal, less_or_equal, greater_or_equal). Use "ref" to target the element containing the current value.
   Two modes:
@@ -150,6 +153,8 @@ uncheck ref=e12
 navigate value="/products"
 press value="Enter"
 scroll value="down"
+scroll value="top"
+scroll ref=e15
 remember ref=e15 as="product_count"
 count text="product card" as="product_cards"
 count text="Add to Cart" as="cart_buttons"
@@ -158,6 +163,8 @@ assert element_visible "Submit"
 assert element_not_visible "Error"
 assert element_disabled "Submit"
 assert element_enabled "Submit"
+assert element_in_viewport "Contact Form"
+assert element_not_in_viewport "Hero Banner"
 assert url_contains "/products"
 assert compare "product count" ref=e15 variable="product_count" operator="less_than"
 assert compare "product count" ref=e15 variable="_" operator="greater_than" literal="0"
@@ -195,12 +202,15 @@ IMPORTANT: Prefix every output line with the input step number it came from, usi
 - assert element_not_visible "text"
 - assert element_disabled "button text"
 - assert element_enabled "button text"
+- assert element_in_viewport "text" — check that an element is within the visible viewport at the current scroll position.
+- assert element_not_in_viewport "text" — check that an element is NOT within the visible viewport.
 - assert link_exists "href"
 - assert field_exists "label"
 - assert numeric "text" — asserts that a count, number, or quantity on the page satisfies a numeric comparison. Use when the step compares a value against a specific number (e.g. "greater than 0", "at least 5", "equals 10"). The runtime extracts the operator and number from the text.
 - navigate "url" — ONLY for explicit URLs or paths starting with "/" or "http". Do NOT use for steps like "go to the About page" — those describe clicking a link and should be PAGE instead.
 - press "key"
-- scroll "up|down"
+- scroll "up|down|top|bottom" — scroll the page in a direction, or to the top/bottom.
+- PAGE "scroll to ..." — scroll a specific element into view. Needs the live page to identify the element.
 
 ═══ Splitting steps ═══
 
@@ -272,6 +282,11 @@ Examples:
   "Verify the drawer opens and contains \\"Hello\\"" → assert contains_text "Hello"
   "verify that the \\"Submit\\" button is disabled" → assert element_disabled "Submit"
   "verify that the \\"Submit\\" button is enabled" → assert element_enabled "Submit"
+  "check that the \\"Contact Form\\" is visible in the viewport" → assert element_in_viewport "Contact Form"
+  "check that the hero banner is not visible after scrolling" → assert element_not_in_viewport "Hero Banner"
+  "scroll to the footer and check that \\"Contact\\" is in view" →
+    PAGE "scroll to the footer"
+    assert element_in_viewport "Contact"
   "count the number of product cards" → COUNT "product cards" as "product_card_count"
   "remember how many rows are in the table" → COUNT "table rows" as "row_count"
   "check that the number of product cards equals 'product count'" →

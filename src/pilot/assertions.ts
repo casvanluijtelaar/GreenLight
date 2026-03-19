@@ -88,6 +88,7 @@ export async function executeAssertion(
 		assertion.type === "element_exists" ||
 		assertion.type === "element_enabled" ||
 		assertion.type === "element_disabled" ||
+		assertion.type === "element_in_viewport" ||
 		assertion.type === "link_exists" ||
 		assertion.type === "field_exists"
 
@@ -387,6 +388,55 @@ export function buildAssertionCheck(
 				if (labelCount === 0 && placeholderCount === 0) {
 					throw new Error(
 						`No form field found matching "${assertion.expected}"`,
+					)
+				}
+				break
+			}
+
+			case "element_in_viewport": {
+				const el = page.getByText(assertion.expected).first()
+				const visible = await el.isVisible()
+				if (!visible) {
+					throw new Error(
+						`Element with text "${assertion.expected}" is not visible on the page`,
+					)
+				}
+				const inViewport = await el.evaluate((node) => {
+					const rect = node.getBoundingClientRect()
+					return (
+						rect.top < window.innerHeight &&
+						rect.bottom > 0 &&
+						rect.left < window.innerWidth &&
+						rect.right > 0
+					)
+				})
+				if (!inViewport) {
+					throw new Error(
+						`Element "${assertion.expected}" exists but is not in the viewport at the current scroll position`,
+					)
+				}
+				break
+			}
+
+			case "element_not_in_viewport": {
+				const notInVpEl = page.getByText(assertion.expected).first()
+				const notInVpVisible = await notInVpEl.isVisible().catch(() => false)
+				if (!notInVpVisible) {
+					// Not visible at all — that counts as not in viewport
+					break
+				}
+				const isInViewport = await notInVpEl.evaluate((node) => {
+					const rect = node.getBoundingClientRect()
+					return (
+						rect.top < window.innerHeight &&
+						rect.bottom > 0 &&
+						rect.left < window.innerWidth &&
+						rect.right > 0
+					)
+				})
+				if (isInViewport) {
+					throw new Error(
+						`Element "${assertion.expected}" is in the viewport but should not be`,
 					)
 				}
 				break

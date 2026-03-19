@@ -469,8 +469,9 @@ export async function executeAction(
 			}
 
 			case "scroll": {
-				if (action.ref) {
-					const locator = await resolveLocator(page, a11yTree, action.ref)
+				if (action.ref || action.text) {
+					// Scroll a specific element into view
+					const locator = await resolveActionTarget(page, action, a11yTree, stepHint)
 					resolvedSelector = await extractSelectorInfo(
 						page,
 						action,
@@ -479,8 +480,15 @@ export async function executeAction(
 					)
 					await locator.scrollIntoViewIfNeeded()
 				} else {
-					const delta = action.value === "up" ? -500 : 500
-					await page.mouse.wheel(0, delta)
+					const dir = (action.value ?? "down").toLowerCase()
+					if (dir === "top") {
+						await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
+					} else if (dir === "bottom") {
+						await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" }))
+					} else {
+						const delta = dir === "up" ? -500 : 500
+						await page.mouse.wheel(0, delta)
+					}
 				}
 				break
 			}

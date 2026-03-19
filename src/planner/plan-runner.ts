@@ -310,8 +310,15 @@ async function executeHeuristicStep(
 					const locator = buildLocator(page, step.selector, hintText)
 					await locator.scrollIntoViewIfNeeded()
 				} else {
-					const delta = step.value === "up" ? -500 : 500
-					await page.mouse.wheel(0, delta)
+					const dir = (step.value ?? "down").toLowerCase()
+					if (dir === "top") {
+						await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
+					} else if (dir === "bottom") {
+						await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" }))
+					} else {
+						const delta = dir === "up" ? -500 : 500
+						await page.mouse.wheel(0, delta)
+					}
 				}
 				break
 			}

@@ -177,6 +177,7 @@ Tests are plain English. The Pilot interprets intent, so phrasing is flexible. Q
 |--------|---------|
 | Navigate | `go to "/products"` or `navigate to About from the menu` |
 | Click | `click "Add to Cart"` or `click the Submit button` |
+| Scroll | `scroll down`, `scroll to top`, or `scroll to the footer` |
 | Type | `enter "jane@example.com" into "Email"` |
 | Select | `select "Canada" from "Country"` (works with native and custom dropdowns) |
 | Form fill | `fill in the contact form with email "a@b.com" and some test data` |
@@ -188,6 +189,7 @@ Tests are plain English. The Pilot interprets intent, so phrasing is flexible. Q
 | Remember | `remember the number of search results` |
 | Compare | `check that the number of results is less than before` |
 | Assert remembered | `check that the booking we just created is visible` |
+| Viewport check | `check that "Contact Form" is in the viewport` |
 | Assert | `check that page contains "Order Confirmed"` |
 | Conditional | `if "Accept cookies" is visible, click it` |
 | Map assert | `check that the map shows "Stockholm"` or `check that zoom level is at least 10` |
@@ -231,6 +233,33 @@ steps:
 ```
 
 When you put text in quotes, GreenLight looks for an element with that exact text. Without quotes, it interprets the description more loosely against the accessibility tree.
+
+### Scrolling
+
+```yaml
+steps:
+  - scroll down                              # scroll the page down
+  - scroll up                                # scroll the page up
+  - scroll to top                            # jump to the top of the page
+  - scroll to bottom                         # jump to the bottom of the page
+  - scroll to the "Contact us" section       # scroll a specific element into view
+  - scroll to the footer                     # scroll to a described element
+```
+
+`scroll up` and `scroll down` move the page by a fixed amount (like pressing Page Down). `scroll to top` and `scroll to bottom` jump directly to the start or end of the page. When you describe a specific element, GreenLight finds it in the accessibility tree and scrolls it into view.
+
+#### Viewport assertions
+
+After scrolling, you can verify that an element is (or isn't) visible in the current viewport:
+
+```yaml
+steps:
+  - scroll to the "Contact" section
+  - check that "Contact Form" is in the viewport
+  - check that the "Hero Banner" is not in the viewport
+```
+
+This checks the element's position relative to the browser window, not just DOM visibility. An element can exist on the page and be "visible" in the DOM sense, but still be off-screen at the current scroll position. The `in the viewport` assertion verifies it's actually on screen.
 
 ### Typing and form fields
 
