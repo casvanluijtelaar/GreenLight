@@ -11,6 +11,8 @@ export interface PlannedStep {
 	action: Action | null
 	/** If true, this step needs runtime expansion into multiple sub-actions (e.g. form filling). */
 	needsExpansion?: boolean
+	/** If true, this step needs runtime date/time picker expansion. */
+	needsDatePick?: boolean
 	/** If true, this step triggers map detection and attachment. */
 	needsMapDetect?: boolean
 	/** For REMEMBER steps: the variable name to store the captured value under. */
@@ -23,6 +25,8 @@ export interface PlannedStep {
 	thenBranch?: PlannedStep[]
 	/** For conditional steps: the step(s) to execute if condition is false (optional). */
 	elseBranch?: PlannedStep[]
+	/** Index of the original test input step this planned step came from (set by pilot). */
+	inputStepIndex?: number
 }
 
 /** Parse a JSON string from the LLM into a validated Action. */
@@ -116,6 +120,7 @@ function parsePlanAction(token: string): {
 	action: Action | null
 	description?: string
 	needsExpansion?: boolean
+	needsDatePick?: boolean
 	needsMapDetect?: boolean
 	rememberAs?: string
 	compare?: { variable: string; operator: string; literal?: string }
@@ -224,6 +229,19 @@ function parsePlanAction(token: string): {
 		return { action: null, description: compareValueSimple[1] }
 	}
 
+	// ASSERT_REMEMBERED "variable_name" — check that a remembered value is visible on the page
+	const assertRememberedMatch = /^assert_remembered\s+"([^"]+)"$/i.exec(t)
+	if (assertRememberedMatch) {
+		return {
+			action: {
+				action: "assert",
+				assertion: { type: "contains_remembered", expected: assertRememberedMatch[1] },
+				compare: { variable: assertRememberedMatch[1], operator: "equal" as const },
+			},
+			description: `check that remembered "${assertRememberedMatch[1]}" is visible on the page`,
+		}
+	}
+
 	// MAP_DETECT — detect and attach to a map instance
 	if (/^map_detect$/i.test(t)) {
 		return { action: null, description: "Detect map instance", needsMapDetect: true }
@@ -234,6 +252,25 @@ function parsePlanAction(token: string): {
 		const after = t.slice(6).trim()
 		const description = after.replace(/^"(.*)"$/, "$1") || undefined
 		return { action: null, description, needsExpansion: true }
+	}
+
+	// DATEPICK "description" "time expression" — date/time picker
+	if (/^datepick(?:\s|$)/i.test(t)) {
+		const after = t.slice(8).trim()
+		// Extract two quoted strings: description and time expression
+		const twoQuoted = /^"([^"]+)"\s+"([^"]+)"$/.exec(after)
+		if (twoQuoted) {
+			// Store time expression in the step text with a separator
+			// so resolveDatePick can extract it
+			return {
+				action: null,
+				description: `${twoQuoted[1]}||${twoQuoted[2]}`,
+				needsDatePick: true,
+			}
+		}
+		// Fallback: single quoted string (time expression = full description)
+		const description = after.replace(/^"(.*)"$/, "$1") || undefined
+		return { action: null, description, needsDatePick: true }
 	}
 
 	// PAGE "description", PAGE description, or bare PAGE
@@ -304,18 +341,29 @@ export function parsePlanResponse(raw: string): PlannedStep[] {
 		.split("\n")
 		.filter((l) => l.trim().length > 0)
 		.map((line) => {
-			const { action, description, needsExpansion, needsMapDetect, rememberAs, compare, condition, thenBranch, elseBranch } = parsePlanAction(line)
-			const step = description ?? line.trim()
+			// Extract optional "#N " input step index prefix
+			let trimmedLine = line.trim()
+			let inputStepIndex: number | undefined
+			const indexMatch = /^#(\d+)\s+/.exec(trimmedLine)
+			if (indexMatch) {
+				inputStepIndex = parseInt(indexMatch[1], 10) - 1 // convert 1-based to 0-based
+				trimmedLine = trimmedLine.slice(indexMatch[0].length)
+			}
+
+			const { action, description, needsExpansion, needsDatePick, needsMapDetect, rememberAs, compare, condition, thenBranch, elseBranch } = parsePlanAction(trimmedLine)
+			const step = description ?? trimmedLine
 			return {
 				step,
 				action,
 				...(needsExpansion ? { needsExpansion: true } : {}),
+				...(needsDatePick ? { needsDatePick: true } : {}),
 				...(needsMapDetect ? { needsMapDetect: true } : {}),
 				...(rememberAs ? { rememberAs } : {}),
 				...(compare ? { compare } : {}),
 				...(condition ? { condition } : {}),
 				...(thenBranch ? { thenBranch } : {}),
 				...(elseBranch ? { elseBranch } : {}),
+				...(inputStepIndex != null ? { inputStepIndex } : {}),
 			}
 		})
 }

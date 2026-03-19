@@ -23,6 +23,9 @@ import {
 	saveHashIndex,
 	loadPlan,
 	savePlan,
+	loadPartialPlan,
+	savePartialPlan,
+	deletePartialPlan,
 	ensureGitignore,
 } from "../planner/plan-store.js"
 import { createPlanRecorder } from "../planner/plan-generator.js"
@@ -284,6 +287,7 @@ export async function runCommand(
 						result = await runCachedPlan(page, cachedPlan, test.name, {
 							waitForNetworkIdle,
 							onStepComplete: printStepResult,
+							consoleDrain: drain,
 						})
 
 						// Handle plan drift
@@ -356,8 +360,87 @@ export async function runCommand(
 							continue
 						}
 					} else {
-						// Discovery run — full LLM loop with recorder
-						const discoveryModelLabel =
+						// Pilot run — check for partial plan to resume from
+						const partialPlan = config.pilot
+							? await loadPartialPlan(cwd, suiteSlug, testSlug)
+							: null
+						const hasPartial = partialPlan && partialPlan.sourceHash === testHash && partialPlan.steps.length > 0
+
+						let resumeSteps = test.steps
+						if (hasPartial && partialPlan.remainingSteps) {
+							// Replay cached steps from previous partial run
+							console.log(`    \x1b[36mResuming from partial plan (${String(partialPlan.steps.length)} cached steps)\x1b[0m`)
+							const partialResult = await runCachedPlan(
+								page,
+								partialPlan,
+								test.name,
+								{
+									waitForNetworkIdle,
+									onStepComplete: printStepResult,
+									consoleDrain: drain,
+								},
+							)
+							if (partialResult.drifted || partialResult.status === "failed") {
+								// Partial plan drifted — fall back to full pilot run
+								console.log(`    \x1b[33mPartial plan drifted, running full pilot\x1b[0m`)
+								await deletePartialPlan(cwd, suiteSlug, testSlug)
+								// Re-create page for clean state
+								globals.trace.detachFromPage(page)
+								if (persistentContext) {
+									for (const p of context.pages()) await p.close().catch(() => {})
+								} else {
+									await context.close()
+								}
+								const ctx3 = persistentContext ?? (await createContext(browser!, browserOpts))
+								const page3 = await createPage(ctx3, { headed: browserOpts.headed })
+								const { drain: drain3 } = attachConsoleCollector(page3)
+								const { waitForNetworkIdle: wni3 } = attachNetworkTracker(page3)
+								globals.trace.attachToPage(page3)
+								await page3.goto(baseUrl)
+								// Fall through to normal pilot below with full steps
+								// (can't reassign page/drain/waitForNetworkIdle, so recurse would be complex —
+								// for now just re-run the whole test)
+								resumeSteps = test.steps
+
+								const modelLabel3 = typeof effectiveModel === "string" ? effectiveModel : `${effectiveModel.planner}/${effectiveModel.pilot}`
+								const recorder3 = createPlanRecorder(suiteSlug, testSlug, testHash, modelLabel3)
+								result = await runTestCase(page3, { name: test.name, steps: resumeSteps }, getOrCreateLLM(), {
+									timeout: config.timeout,
+									consoleDrain: drain3,
+									recorder: recorder3,
+									waitForNetworkIdle: wni3,
+									onStepComplete: printStepResult,
+								})
+								result.mode = "pilot"
+								if (result.status === "passed") {
+									const plan = recorder3.finalize()
+									await savePlan(cwd, plan)
+									hashIndex[hashKey] = testHash
+									hashIndexDirty = true
+									await deletePartialPlan(cwd, suiteSlug, testSlug)
+									await ensureGitignore(cwd)
+									console.log(`    \x1b[32mCached plan generated for: ${test.name}\x1b[0m`)
+								} else {
+									const completed3 = result.completedInputSteps ?? 0
+									const remaining3 = resumeSteps.slice(completed3)
+									if (remaining3.length > 0 && completed3 > 0) {
+										const partial = recorder3.finalizePartial(remaining3)
+										await savePartialPlan(cwd, partial)
+										await ensureGitignore(cwd)
+									}
+								}
+								globals.trace.detachFromPage(page3)
+								if (!persistentContext) await ctx3.close()
+								printTestSummary(result)
+								if (config.headed) await new Promise((r) => setTimeout(r, 2000))
+								continue
+							}
+							// Partial replay succeeded — continue with remaining steps
+							resumeSteps = partialPlan.remainingSteps
+							console.log(`    \x1b[33mSwitching to pilot for ${String(resumeSteps.length)} remaining steps\x1b[0m`)
+						}
+
+						const modelLabel =
 							typeof effectiveModel === "string"
 								? effectiveModel
 								: `${effectiveModel.planner}/${effectiveModel.pilot}`
@@ -365,28 +448,39 @@ export async function runCommand(
 							suiteSlug,
 							testSlug,
 							testHash,
-							discoveryModelLabel,
+							modelLabel,
 						)
 
-						result = await runTestCase(page, test, getOrCreateLLM(), {
+						const pilotResult = await runTestCase(page, { name: test.name, steps: resumeSteps }, getOrCreateLLM(), {
 							timeout: config.timeout,
 							consoleDrain: drain,
 							recorder,
 							waitForNetworkIdle,
 							onStepComplete: printStepResult,
 						})
+						result = pilotResult
 						result.mode = "pilot"
 
-						// Save plan only if the test passed
 						if (result.status === "passed") {
 							const plan = recorder.finalize()
 							await savePlan(cwd, plan)
 							hashIndex[hashKey] = testHash
 							hashIndexDirty = true
+							await deletePartialPlan(cwd, suiteSlug, testSlug)
 							await ensureGitignore(cwd)
 							console.log(
 								`    \x1b[32mCached plan generated for: ${test.name}\x1b[0m`,
 							)
+						} else {
+							// Save partial plan so next run can resume from here
+							const completed = result.completedInputSteps ?? 0
+							const remaining = resumeSteps.slice(completed)
+							if (remaining.length > 0 && completed > 0) {
+								const partial = recorder.finalizePartial(remaining)
+								await savePartialPlan(cwd, partial)
+								await ensureGitignore(cwd)
+								console.log(`    \x1b[33mPartial plan saved (${String(completed)}/${String(resumeSteps.length)} steps cached for next run)\x1b[0m`)
+							}
 						}
 					}
 

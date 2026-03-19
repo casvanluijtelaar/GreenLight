@@ -33,7 +33,7 @@ tests:
       - check that you see "Thanks for your inquiry"
 ```
 
-GreenLight understands form wizards, custom dropdowns, autocomplete fields, checkbox consent flows, and interactive maps. It fills in forms with realistic test data, handles before/after value comparisons, and works with any UI framework.
+GreenLight understands form wizards, custom dropdowns, autocomplete fields, checkbox consent flows, complex date pickers and interactive maps. It fills in forms with realistic test data, handles before/after value comparisons, and works with any UI framework.
 
 The first run uses an LLM to discover the right actions (the **discovery run**). After that, GreenLight caches a concrete action plan and replays it without LLM calls — making subsequent runs fast and deterministic.
 
@@ -181,8 +181,11 @@ Tests are plain English. The Pilot interprets intent, so phrasing is flexible. Q
 | Form fill | `fill in the contact form with email "a@b.com" and some test data` |
 | Autocomplete | `type "Stock" into the city field and select the first suggestion` |
 | Check | `check the "I agree to terms" checkbox` |
+| Random data | `name the booking a random string` |
+| Date/time | `set the start time to 10 minutes from now` |
 | Remember | `remember the number of search results` |
 | Compare | `check that the number of results is less than before` |
+| Assert remembered | `check that the booking we just created is visible` |
 | Assert | `check that page contains "Order Confirmed"` |
 | Conditional | `if "Accept cookies" is visible, click it` |
 | Map assert | `check that the map shows "Stockholm"` or `check that zoom level is at least 10` |
@@ -317,6 +320,59 @@ steps:
 
 **Important:** Assertions with quoted text (like `"Order Confirmed"`) are resolved at plan time — no LLM call needed at runtime. Assertions without quotes (like `check that the form is present`) require the live page to resolve.
 
+### Random test data
+
+When a step asks to type "a random string", "some test data", or similar, the pilot generates a realistic random value and types it. This is useful for creating unique records in tests:
+
+```yaml
+steps:
+  - name the booking a random string
+  - enter a random email into the "Email" field
+  - fill the "Description" field with some test data
+```
+
+For full forms with multiple fields, use the form filling syntax (`fill in the form with some test data`) — GreenLight inspects each field's label, type, and placeholder to generate appropriate data.
+
+### Date and time pickers
+
+GreenLight has built-in support for date/time pickers — including native HTML5 inputs and component-library widgets like MUI DateTimePicker with sectioned spinbuttons. No special syntax is needed; just describe what time to set using natural language:
+
+```yaml
+steps:
+  - set the start time to 10 minutes from now
+  - set the end time to 1 hour from now
+  - set the deadline to tomorrow at 3pm
+  - set the check-in date to next Monday
+  - enter 2026-06-15 in the date field
+```
+
+**How it works:**
+
+1. The planner identifies date/time steps and extracts the time expression (e.g., "10 minutes from now")
+2. [chrono-node](https://github.com/wanasit/chrono) parses the expression into an exact timestamp — no LLM needed for time math
+3. GreenLight inspects the page's accessibility tree to find the picker elements
+4. Values are filled into the correct fields automatically
+
+**Supported picker types:**
+
+- **Native HTML5** (`<input type="date">`, `datetime-local`, `time`) — filled with `YYYY-MM-DD`, `YYYY-MM-DDTHH:mm`, or `HH:mm`
+- **Sectioned pickers** (MUI v7, etc.) — individual spinbutton sections (Day, Month, Year, Hours, Minutes) are each filled with the correct value
+- **Multiple pickers on one page** — GreenLight matches "start" / "end" in the step text against picker group names to target the right one
+
+**Supported time expressions:**
+
+| Expression | Example result |
+|-----------|---------------|
+| `10 minutes from now` | Current time + 10 minutes |
+| `1 hour from now` | Current time + 1 hour |
+| `tomorrow` | Tomorrow, same time |
+| `tomorrow at 3pm` | Tomorrow at 15:00 |
+| `next Monday` | The upcoming Monday |
+| `2026-06-15` | Explicit date |
+| `2026-06-15 14:30` | Explicit date and time |
+
+Date picker steps are always computed fresh — even on cached plan replay, the timestamp is recalculated from the current time. This means tests with relative times like "10 minutes from now" never fail due to stale cached dates.
+
 ### Value comparisons (remember/compare)
 
 Remember a value before an action, then compare after:
@@ -329,6 +385,18 @@ steps:
 ```
 
 GreenLight captures the numeric value from the page, stores it, and compares it after the action. Supported operators: `increased`, `decreased`, `greater than`, `less than`, `equal to`, `at least`, `at most`.
+
+You can also remember non-numeric values and check that they appear on the page later:
+
+```yaml
+steps:
+  - name the booking a random string
+  - remember the name of the booking
+  - click "Save"
+  - check that the booking we just created is visible in the list
+```
+
+This flow generates a random value, captures it, performs an action, and then verifies the value still appears on the page. Useful for testing create/edit/delete workflows where you need to verify that a specific record you just created shows up correctly.
 
 ### Conditional steps
 

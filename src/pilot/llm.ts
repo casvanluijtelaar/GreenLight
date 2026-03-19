@@ -16,7 +16,7 @@ import {
 	PLAN_SYSTEM_PROMPT,
 	EXPAND_SYSTEM_PROMPT,
 } from "./prompts.js"
-import { buildUserMessage, buildCompactMessage } from "./message-builder.js"
+import { buildUserMessage, buildCompactMessage, formatLocalTime } from "./message-builder.js"
 import { parseActionResponse, parsePlanResponse } from "./response-parser.js"
 import type { PlannedStep } from "./response-parser.js"
 import type { ChatMessage, LLMProvider } from "./providers/index.js"

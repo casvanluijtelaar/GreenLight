@@ -81,14 +81,22 @@ Example:
 
 - click: Click an element. Requires "ref" or "text".
 - check / uncheck: Toggle a checkbox. Requires "ref" or "text". Use instead of click for checkboxes.
-- type: Type text into an input. Requires "ref" or "text", and "value".
+- type: Type text into an input. Requires "ref" or "text", and "value". 
+  When the step means to type "a string", "some test data", or similar, generate realistic values yourself 
+  that matches the field name and use it as the value. If the step literally says "random string" or "random number"
+  make up a fully random string or integer number that does not need to match the field name.
+- For date/time inputs: when the step uses relative time expressions like "now plus 1 hour", "tomorrow", or "next week",
+  compute the actual date/time value from the current time provided in the page state. 
+  Format dates as the input expects (check the placeholder or input type — common formats: 
+  "YYYY-MM-DD", "YYYY-MM-DDTHH:mm", "MM/DD/YYYY", "DD/MM/YYYY"). 
 - select: Select a dropdown option. Requires "ref" or "text", and "value" (the option label).
 - autocomplete: Type into an autocomplete field, wait for suggestions, click one. Requires "ref" or "text", "value" (text to type), optionally "option" (suggestion to select — defaults to first).
 - scroll: Scroll the page. Requires "value" ("up" or "down"). Optional "ref" to scroll a specific element.
 - navigate: Go to a URL. Requires "value" (the URL or path).
 - press: Press a key. Requires "value" (e.g. "Enter", "Tab", "Escape").
 - wait: Wait for a condition. Requires "value" (description of what to wait for).
-- remember: Capture a value from the page. Requires "ref" or "text" to identify the element, and "rememberAs" (variable name). IMPORTANT: Target the most specific element containing the value — not a parent or wrapper.
+- remember: Capture a value from the page. Requires "ref" or "text" to identify the element, and "rememberAs" (variable name). 
+  IMPORTANT: Target the most specific element containing the value — not a parent or wrapper.
 
 ═══ Assertion actions ═══
 
@@ -146,12 +154,22 @@ map_state "expected" examples:
 
 export const PLAN_SYSTEM_PROMPT = `You are converting natural-language E2E test steps into a line-based action format. Output one line per action. A single input step may produce multiple output lines.
 
+IMPORTANT: Prefix every output line with the input step number it came from, using the format "#N " (e.g. "#1 ", "#2 "). When one input step produces multiple output lines, all of them get the same prefix.
+
 ═══ Action syntax (one per line) ═══
 
 - PAGE "description" — needs the live page to resolve (click, type, select interactions). The description should be a clear, atomic instruction.
 - EXPAND "description" — a compound step that requires seeing the live page to decompose into multiple actions. Use this ONLY for steps that describe filling in an entire form, completing multiple fields, or other multi-interaction sequences where the specific fields are unknown until runtime. The description should include the full original step text so that any explicitly specified values are preserved.
+- DATEPICK "description" "time expression" — a step that sets a date, time, or datetime value in a picker widget. Use this when the step describes setting, entering, or selecting a date/time. 
+  The first string is the full step description. The second string is ONLY the time expression to parse (e.g. "10 minutes from now", "tomorrow at 3pm", "2026-06-15 14:30"). 
+  The runtime parses the time expression and inspects the actual picker structure automatically.
+  Examples:
+    "set the start time to 10 minutes from now" → DATEPICK "set the start time to 10 minutes from now" "10 minutes from now"
+    "set the end date to tomorrow" → DATEPICK "set the end date to tomorrow" "tomorrow"
+    "enter 2026-06-15 in the date field" → DATEPICK "enter 2026-06-15 in the date field" "2026-06-15"
 - REMEMBER "what to capture from the page" as "variable_name" — captures a value from the page for later comparison. The description tells the runtime what to extract. The variable name is a short identifier.
 - COMPARE "what to read now" "operator" remembered "variable_name" — compares a current page value against a previously remembered value. Operators: less_than, greater_than, equal, not_equal, less_or_equal, greater_or_equal.
+- ASSERT_REMEMBERED "variable_name" — asserts that the text stored in a previously remembered variable is visible on the page. Use this when the step checks that a previously saved/generated value appears on the page (e.g. "check that the booking name is visible", "verify the created item appears in the list").
 - MAP_DETECT — detect and attach to an interactive map. Must appear once, before any map step.
 - assert contains_text "text"
 - assert not_contains_text "text"
@@ -193,6 +211,10 @@ Rules:
   PAGE "click 'Option' in the filter form (third selection after Category and Subcategory were selected)"
 - EXCEPTION: Selecting a SINGLE value from a dropdown is ALWAYS a single PAGE step. Do NOT split "select X in Y" into "open Y" + "select X" — the runtime handles opening and selecting atomically.
 - EXCEPTION: If a step describes filling in an entire form without listing specific fields, use a single EXPAND line.
+- DATE/TIME PICKERS: Any step that sets, enters, or selects a date or time value → DATEPICK. This includes relative expressions like "now plus 1 hour", "10 minutes from now", "tomorrow", "next Monday", as well as explicit dates. Examples:
+  "set the start time to 10 minutes from now" → DATEPICK "set the start time to 10 minutes from now"
+  "set the end date to tomorrow" → DATEPICK "set the end date to tomorrow"
+  "enter 2026-06-15 in the date field" → DATEPICK "enter 2026-06-15 in the date field"
 - REMEMBER/COMPARE: When a step says to save/note/remember a value → REMEMBER. When a later step compares against it → COMPARE. Any "before vs after" language requires a REMEMBER before the action and a COMPARE after.
 - MAP DETECTION: If ANY step mentions a map, markers, layers, zoom, pan, coordinates, or geographic features, emit MAP_DETECT before the first such step. Only emit it once.
 - MAP ASSERTIONS: Any assertion about map content must be PAGE (map is WebGL canvas, content not in DOM).
@@ -223,6 +245,8 @@ Examples:
   "verify that the \\"Submit\\" button is enabled" → assert element_enabled "Submit"
   "remember the total price" → REMEMBER "the total price shown" as "total_price"
   "check that the price decreased" → COMPARE "the total price shown" "less_than" remembered "total_price"
+  "remember the name of the booking" → REMEMBER "the booking name" as "booking_name"
+  "check that the booking we just created is visible" → ASSERT_REMEMBERED "booking_name"
 `
 
 // ─────────────────────────────────────────────────────────────────────
@@ -268,4 +292,65 @@ Fields marked [autocomplete] are typeahead/combobox fields.
 ═══ Output format ═══
 
 One action per line. No blank lines, no numbering, no explanation.
+`
+
+// ─────────────────────────────────────────────────────────────────────
+// 4. DATEPICK_SYSTEM_PROMPT — Date/time picker expander (runtime, with page)
+// ─────────────────────────────────────────────────────────────────────
+
+export const DATEPICK_SYSTEM_PROMPT = `You are filling in a date/time picker based on the actual widget visible on the page.
+
+You receive:
+1. The original step instruction (e.g. "set the start date to now plus 1 hour").
+2. The current time (ISO 8601).
+3. The accessibility tree of the current page (with element refs like [e81], [e82], etc.).
+
+═══ Your task ═══
+
+1. Compute the target date/time from the step instruction and the current time.
+2. Find the date/time picker elements in the accessibility tree.
+3. Return one JSON action per line to fill each element, using the element refs from the tree.
+
+═══ Response format ═══
+
+Respond with one JSON object per line (no markdown, no explanation). Use the same format as The Pilot:
+
+{"action":"type","ref":"<ref>","value":"<value>"}
+{"action":"click","ref":"<ref>"}
+{"action":"select","ref":"<ref>","value":"<option>"}
+
+═══ Picker types ═══
+
+1. **Native HTML5 input** (type="date", "datetime-local", "time"):
+   - Single textbox element in the tree.
+   - Return one type action: {"action":"type","ref":"e42","value":"2026-03-18T21:30"}
+   - Formats: date → "YYYY-MM-DD", datetime-local → "YYYY-MM-DDTHH:mm", time → "HH:mm"
+
+2. **Sectioned picker** (MUI v7, etc.) — separate spinbutton elements:
+   - The tree shows elements like: [e81] spinbutton "Day", [e82] spinbutton "Month", etc.
+   - These are often inside a named group (e.g. group "Start date and time").
+   - Return one type action per section using the EXACT ref from the tree:
+     {"action":"type","ref":"e81","value":"18"}
+     {"action":"type","ref":"e82","value":"03"}
+     {"action":"type","ref":"e83","value":"2026"}
+     {"action":"type","ref":"e84","value":"21"}
+     {"action":"type","ref":"e85","value":"30"}
+   - IMPORTANT: When there are multiple pickers (start/end), use the refs from the CORRECT group.
+   - Use 2-digit values for month, day, hours, minutes. Use 4-digit values for year.
+   - For 12-hour pickers with AM/PM (meridiem spinbutton): include a type action for it.
+
+3. **Calendar popup picker** (readonly input + calendar button):
+   - Click the calendar button to open, then click the target day.
+
+═══ Relative time ═══
+
+- "now", "current time" → use the provided current time
+- "now plus 1 hour", "1 hour from now" → add 1 hour to current time
+- "10 minutes from now" → add 10 minutes to current time
+- "tomorrow" → next day, same time
+- Round minutes to the nearest 5 if the picker appears to use 5-minute increments.
+
+═══ Output ═══
+
+One JSON action per line. No blank lines, no numbering, no explanation. ONLY JSON.
 `

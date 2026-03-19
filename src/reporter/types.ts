@@ -140,6 +140,8 @@ export interface TestCaseResult {
 	mode?: "pilot" | "cached"
 	/** Whether the cached plan drifted from the actual application state. */
 	drifted?: boolean
+	/** Number of original test input steps that completed (for partial plan saving). */
+	completedInputSteps?: number
 }
 
 /** A structured action returned by the LLM for a single step. */

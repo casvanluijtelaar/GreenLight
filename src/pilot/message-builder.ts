@@ -7,6 +7,22 @@ import { formatA11yTree } from "./a11y-parser.js"
 import { SYSTEM_PROMPT } from "./prompts.js"
 import type { ChatMessage } from "./providers/types.js"
 
+/**
+ * Format the current local time as an ISO-like string with timezone offset.
+ * E.g. "2026-03-19T10:25:00+01:00" — so the LLM computes relative times
+ * in the user's local timezone (which is what date pickers expect).
+ */
+export function formatLocalTime(): string {
+	const now = new Date()
+	const off = -now.getTimezoneOffset()
+	const sign = off >= 0 ? "+" : "-"
+	const absOff = Math.abs(off)
+	const hh = String(Math.floor(absOff / 60)).padStart(2, "0")
+	const mm = String(absOff % 60).padStart(2, "0")
+	const pad = (n: number) => String(n).padStart(2, "0")
+	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${sign}${hh}:${mm}`
+}
+
 /** Format map state as a human-readable string for the LLM. */
 function formatMapState(mapState: PageState["mapState"]): string {
 	if (!mapState) return ""
@@ -29,6 +45,7 @@ export function buildUserMessage(step: string, pageState: PageState): string {
 	const parts = [
 		`Current URL: ${pageState.url}`,
 		`Page title: ${pageState.title}`,
+		`Current local time: ${formatLocalTime()}`,
 		"",
 		"Accessibility tree:",
 		tree,

@@ -49,7 +49,7 @@ export interface HeuristicStep {
 	}
 }
 
-/** A complete cached plan for one test case. */
+/** A complete or partial cached plan for one test case. */
 export interface HeuristicPlan {
 	/** Slugified suite name (used as directory). */
 	suiteSlug: string
@@ -65,4 +65,8 @@ export interface HeuristicPlan {
 	greenlightVersion: string
 	/** The concrete steps to replay. */
 	steps: HeuristicStep[]
+	/** If true, this plan is from a failed run and only covers steps up to the failure. */
+	partial?: boolean
+	/** Original test input steps remaining after this partial plan (for resuming). */
+	remainingSteps?: string[]
 }

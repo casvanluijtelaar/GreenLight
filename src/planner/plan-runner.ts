@@ -13,6 +13,8 @@ import { executeAction, runWithNavigationHandling } from "../pilot/executor.js"
 import { checkCheckbox } from "../pilot/checkbox.js"
 import { extractQuotedText } from "../pilot/locator.js"
 import { evaluateCondition } from "../pilot/conditions.js"
+import { resolveDatePick } from "../pilot/datepick.js"
+import { capturePageState } from "../pilot/state.js"
 import { globals } from "../globals.js"
 
 type AriaRole = Parameters<Page["getByRole"]>[0]
@@ -359,7 +361,11 @@ export async function runCachedPlan(
 	page: Page,
 	plan: HeuristicPlan,
 	testName: string,
-	options?: { waitForNetworkIdle?: () => Promise<void>; onStepComplete?: (result: StepResult) => void },
+	options?: {
+		waitForNetworkIdle?: () => Promise<void>
+		onStepComplete?: (result: StepResult) => void
+		consoleDrain?: () => import("../reporter/types.js").ConsoleEntry[]
+	},
 ): Promise<TestCaseResult> {
 	const startTime = performance.now()
 	const stepResults: StepResult[] = []
@@ -419,6 +425,62 @@ export async function runCachedPlan(
 				conditionResult: { met: conditionMet, branch: branchLabel as "then" | "else" | "skipped" },
 			})
 			continue
+		}
+
+		// Handle datepick steps — resolve with fresh timestamps (no LLM needed)
+		if (step.action === "datepick" && step.value) {
+			try {
+				const consoleDrain = options?.consoleDrain ?? (() => [])
+				const state = await capturePageState(page, consoleDrain, {
+					mapAdapter: mapAdapter ?? undefined,
+				})
+				const expandedSteps = resolveDatePick(step.value, state.a11yTree)
+
+				if (globals.debug) {
+					console.log(`      [cached:datepick] Resolved "${step.value}" into ${String(expandedSteps.length)} actions`)
+				}
+
+				// Execute each sub-step directly
+				for (const es of expandedSteps) {
+					if (!es.action) continue
+					const subState = await capturePageState(page, consoleDrain, {
+						mapAdapter: mapAdapter ?? undefined,
+					})
+					const subResult = await executeAction(page, es.action, subState.a11yTree)
+					if (!subResult.success) {
+						drifted = true
+						recordStep({
+							step: es.step,
+							action: es.action,
+							status: "failed",
+							duration: performance.now() - stepStart,
+							error: `Plan drift: ${subResult.error ?? "datepick sub-step failed"}`,
+						})
+						break
+					}
+					await page.waitForLoadState("domcontentloaded")
+					if (options?.waitForNetworkIdle) await options.waitForNetworkIdle()
+				}
+				if (drifted) break
+
+				recordStep({
+					step: step.originalStep,
+					action: { action: "datepick", value: step.value },
+					status: "passed",
+					duration: performance.now() - stepStart,
+				})
+				continue
+			} catch (err) {
+				drifted = true
+				recordStep({
+					step: step.originalStep,
+					action: { action: "datepick", value: step.value },
+					status: "failed",
+					duration: performance.now() - stepStart,
+					error: `Datepick failed: ${err instanceof Error ? err.message : String(err)}`,
+				})
+				break
+			}
 		}
 
 		// Handle map detection step — find and attach to the map instance

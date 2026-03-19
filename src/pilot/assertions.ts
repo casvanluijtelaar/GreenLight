@@ -56,6 +56,22 @@ export async function executeAssertion(
 		return
 	}
 
+	// Handle "contains_remembered" — check that a remembered value appears on the page
+	if (assertion.type === "contains_remembered" && action.compare?.variable) {
+		const varName = action.compare.variable
+		const remembered = globals.valueStore.get(varName)
+		if (!remembered) {
+			throw new Error(`No remembered value found for "${varName}"`)
+		}
+		await pollAssertion(async () => {
+			const body = await page.locator("body").textContent()
+			if (!body?.includes(remembered)) {
+				throw new Error(`Page does not contain remembered value "${remembered}" (from variable "${varName}")`)
+			}
+		})
+		return
+	}
+
 	// Handle map state assertions — evaluate against captured map viewport + features
 	if (assertion.type === "map_state") {
 		await executeMapAssertion(page, assertion.expected, mapContext)

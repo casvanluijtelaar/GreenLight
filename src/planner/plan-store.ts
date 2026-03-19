@@ -9,6 +9,7 @@ import type { HeuristicPlan } from "./plan-types.js"
 
 const GREENLIGHT_DIR = ".greenlight"
 const PLANS_DIR = ".greenlight/plans"
+const PARTIAL_DIR = ".greenlight/partial"
 const HASH_FILE = ".greenlight/hashes.json"
 
 /** Load the hash index mapping test keys to their source hashes. */
@@ -73,6 +74,44 @@ export async function deletePlan(
 	} catch {
 		// File doesn't exist — that's fine
 	}
+}
+
+/** Load a partial plan (from a previous failed pilot run). */
+export async function loadPartialPlan(
+	projectRoot: string,
+	suiteSlug: string,
+	testSlug: string,
+): Promise<HeuristicPlan | null> {
+	try {
+		const path = join(projectRoot, PARTIAL_DIR, suiteSlug, `${testSlug}.json`)
+		const raw = await readFile(path, "utf-8")
+		return JSON.parse(raw) as HeuristicPlan
+	} catch {
+		return null
+	}
+}
+
+/** Save a partial plan from a failed pilot run. */
+export async function savePartialPlan(
+	projectRoot: string,
+	plan: HeuristicPlan,
+): Promise<void> {
+	const dir = join(projectRoot, PARTIAL_DIR, plan.suiteSlug)
+	await mkdir(dir, { recursive: true })
+	const path = join(dir, `${plan.testSlug}.json`)
+	await writeFile(path, JSON.stringify(plan, null, 2) + "\n")
+}
+
+/** Delete a partial plan (after a full plan is generated). */
+export async function deletePartialPlan(
+	projectRoot: string,
+	suiteSlug: string,
+	testSlug: string,
+): Promise<void> {
+	try {
+		const path = join(projectRoot, PARTIAL_DIR, suiteSlug, `${testSlug}.json`)
+		await unlink(path)
+	} catch { /* doesn't exist */ }
 }
 
 /**

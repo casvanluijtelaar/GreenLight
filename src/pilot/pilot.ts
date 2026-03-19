@@ -16,6 +16,7 @@ import type {
 import type { LLMClient } from "./llm.js"
 import type { PlannedStep } from "./response-parser.js"
 import { validatePlanReferences } from "./response-parser.js"
+import { resolveDatePick } from "./datepick.js"
 import { capturePageState } from "./state.js"
 import { resetRefCounter } from "./a11y-parser.js"
 import { executeAction } from "./executor.js"
@@ -49,8 +50,13 @@ export async function runTestCase(
 ): Promise<TestCaseResult> {
 	const startTime = performance.now()
 	const stepResults: StepResult[] = []
+	/** Index of the queue entry currently being executed (set in the loop). */
+	let currentQueuePlanned: PlannedStep | null = null
 	const recordStep = (result: StepResult) => {
 		stepResults.push(result)
+		if (result.status === "passed" && currentQueuePlanned?.inputStepIndex != null) {
+			lastCompletedInputStep = Math.max(lastCompletedInputStep, currentQueuePlanned.inputStepIndex)
+		}
 		options.onStepComplete?.(result)
 	}
 
@@ -110,11 +116,25 @@ export async function runTestCase(
 		// that the runtime can still handle
 	}
 
+	if (globals.debug) {
+		console.log(`\n      Input step mapping:`)
+		for (const p of plan) {
+			console.log(`        [${String(p.inputStepIndex ?? "?")}] ${p.step}`)
+		}
+	}
+
 	// Build the execution queue — EXPAND steps get expanded at runtime
 	// and their sub-steps are spliced into the queue.
 	const queue = [...plan]
 	let queueIndex = 0
 	let failed = false
+	let lastCompletedInputStep = -1
+
+	// Track whether we're inside a DATEPICK expansion — sub-steps should
+	// not be individually recorded in the heuristic plan (the whole datepick
+	// will be re-expanded with fresh timestamps on cached replay).
+	let insideDatePick = false
+	let datepickSubStepsRemaining = 0
 
 	// Map adapter — set by MAP_DETECT, then passed to all subsequent state captures
 	let mapAdapter: MapAdapter | null = null
@@ -124,7 +144,8 @@ export async function runTestCase(
 	while (queueIndex < queue.length && !failed) {
 		const planned = queue[queueIndex]
 		queueIndex++
-		const { step, action: plannedAction, needsExpansion, needsMapDetect, rememberAs, compare: plannedCompare } = planned
+		currentQueuePlanned = planned
+		const { step, action: plannedAction, needsExpansion, needsDatePick, needsMapDetect, rememberAs, compare: plannedCompare } = planned
 
 		// ── MAP_DETECT: find and attach to a map instance ─────────────
 		if (needsMapDetect) {
@@ -220,6 +241,63 @@ export async function runTestCase(
 			continue
 		}
 
+		// ── DATEPICK: resolve date/time picker with chrono-node ──────
+		if (needsDatePick) {
+			trace.log("datepick:start", step)
+			if (globals.debug) {
+				console.log(`\n      Resolving date picker step: ${step}`)
+			}
+
+			if (options.waitForNetworkIdle) {
+				await options.waitForNetworkIdle()
+			}
+			const state = await capturePageState(page, options.consoleDrain, {
+				mapAdapter: mapAdapter ?? undefined,
+			})
+
+			try {
+				const t0 = performance.now()
+				const expandedSteps = resolveDatePick(step, state.a11yTree)
+				const duration = performance.now() - t0
+				trace.log("datepick:done", `${String(Math.round(duration))}ms → ${String(expandedSteps.length)} sub-steps`)
+
+				if (globals.debug) {
+					console.log(`      Date picker resolved into ${String(expandedSteps.length)} sub-steps:`)
+					for (const es of expandedSteps) {
+						console.log(`        - ${JSON.stringify(es.action)}`)
+					}
+					console.log()
+				}
+
+				// Record a single datepick marker in the heuristic plan.
+				// Sub-steps will NOT be individually recorded — the datepick
+				// will be re-resolved with fresh timestamps on cached replay.
+				if (recorder) {
+					recorder.recordStep(
+						step,
+						{ action: "datepick", value: step },
+						{ success: true, duration },
+						{ url: page.url(), title: await page.title() },
+					)
+				}
+
+				// Track how many sub-steps to skip recording for
+				insideDatePick = true
+				datepickSubStepsRemaining = expandedSteps.length
+				queue.splice(queueIndex, 0, ...expandedSteps)
+			} catch (err) {
+				recordStep({
+					step,
+					action: null,
+					status: "failed",
+					duration: 0,
+					error: `Failed to resolve date picker: ${err instanceof Error ? err.message : String(err)}`,
+				})
+				failed = true
+			}
+			continue
+		}
+
 		// ── CONDITIONAL: evaluate condition and splice chosen branch ──
 		if (planned.condition) {
 			trace.log("condition:eval", `${planned.condition.type} "${planned.condition.target}"`)
@@ -282,9 +360,22 @@ export async function runTestCase(
 			let a11yTree: A11yNode[] = []
 
 			if (plannedAction) {
-				// Pre-planned: skip page capture and LLM call
+				// Pre-planned: skip LLM call but capture page state if
+				// the action uses a ref (needed for locator resolution).
 				action = plannedAction
 				trace.log("plan:hit", JSON.stringify(action))
+				if (action.ref) {
+					if (options.waitForNetworkIdle) {
+						await options.waitForNetworkIdle()
+					}
+					const t0 = performance.now()
+					const state = await capturePageState(page, options.consoleDrain, {
+						mapAdapter: mapAdapter ?? undefined,
+					})
+					timing.capture = performance.now() - t0
+					a11yTree = state.a11yTree
+					if (state.mapState) latestMapState = state.mapState
+				}
 			} else {
 				// Needs page state: wait for async requests to settle, then capture
 				if (options.waitForNetworkIdle) {
@@ -410,8 +501,10 @@ export async function runTestCase(
 			)
 			if (postState.mapState) latestMapState = postState.mapState
 
-			// Record step for heuristic plan if recorder is active
-			if (recorder) {
+			// Record step for heuristic plan if recorder is active.
+			// Skip for datepick sub-steps — the datepick marker was already
+			// recorded and will be re-expanded with fresh timestamps on replay.
+			if (recorder && !insideDatePick) {
 				recorder.recordStep(step, action, result, {
 					url: postState.url,
 					title: postState.title,
@@ -426,6 +519,14 @@ export async function runTestCase(
 				timing,
 				screenshot: postState.screenshot,
 			})
+
+			// Track datepick sub-step completion
+			if (insideDatePick) {
+				datepickSubStepsRemaining--
+				if (datepickSubStepsRemaining <= 0) {
+					insideDatePick = false
+				}
+			}
 		} catch (err) {
 			// LLM API errors (4xx/5xx) must abort the entire run — re-throw
 			// so the CLI loop can catch and stop.
@@ -452,5 +553,6 @@ export async function runTestCase(
 		status,
 		steps: stepResults,
 		duration: performance.now() - startTime,
+		completedInputSteps: lastCompletedInputStep + 1,
 	}
 }

@@ -17,6 +17,7 @@ import {
 	resolveLocator,
 	resolveActionTarget,
 	extractSelectorInfo,
+	findNodeByRef,
 } from "./locator.js"
 import { checkCheckbox } from "./checkbox.js"
 import { executeAssertion } from "./assertions.js"
@@ -51,34 +52,70 @@ export async function runWithNavigationHandling(
 }
 
 /**
- * Search the a11y tree for a node whose name contains a number and
- * matches any of the given keywords. Used as a fallback when the LLM
- * returns a remember action without specifying a target element.
+ * Search the enriched a11y tree for a value matching the given keywords.
+ * Checks node.value, node.visibleText, and node.name (in priority order).
+ * Used as a fallback when the LLM returns a remember action without
+ * specifying a target element.
  */
 function findValueInTree(nodes: A11yNode[], keywords: string[]): string {
 	const lowerKeywords = keywords.map((k) => k.toLowerCase())
-	let bestMatch = ""
+
+	function score(text: string): number {
+		const lower = text.toLowerCase()
+		return lowerKeywords.filter((kw) => lower.includes(kw)).length
+	}
+
+	// Strategy: find nodes where the name/label matches keywords,
+	// then return their VALUE (not the label). This handles the common
+	// pattern: keywords "booking name" match the label "Booking name"
+	// on an input with value "Booking123" — we want "Booking123".
+	let bestNode: A11yNode | null = null
+	let bestScore = 0
 
 	function walk(nodeList: A11yNode[]): void {
 		for (const node of nodeList) {
-			const name = node.name.toLowerCase()
-			// Check if the name contains a number
-			if (/\d/.test(name)) {
-				// Check if any keyword matches
-				const matches = lowerKeywords.some((kw) => name.includes(kw))
-				if (matches) {
-					// Prefer shorter, more specific matches
-					if (!bestMatch || node.name.length < bestMatch.length) {
-						bestMatch = node.name
-					}
-				}
+			// Score against the node's label/name
+			const nameScore = node.name ? score(node.name) : 0
+			if (nameScore > bestScore) {
+				bestScore = nameScore
+				bestNode = node
 			}
 			if (node.children) walk(node.children)
 		}
 	}
 
 	walk(nodes)
-	return bestMatch
+
+	// If the best-matching node has a value (input field), return that.
+	// Otherwise return the node's visibleText or name.
+	if (bestNode) {
+		const n = bestNode as A11yNode
+		if (n.value) return n.value
+		if (n.visibleText) return n.visibleText
+		return n.name
+	}
+
+	// No keyword match — return the first non-empty value field.
+	// Useful when the step says "remember the name" and the tree has
+	// exactly one input with a recently typed value.
+	for (const node of flattenNodes(nodes)) {
+		if (node.value) return node.value
+	}
+
+	return ""
+}
+
+/** Flatten an a11y node tree into a flat array. */
+function flattenNodes(nodes: A11yNode[]): A11yNode[] {
+	const result: A11yNode[] = []
+	function walk(list: A11yNode[]): void {
+		for (const node of list) {
+			result.push(node)
+			if (node.children) walk(node.children)
+		}
+	}
+	walk(nodes)
+	return result
 }
 
 /**
@@ -155,39 +192,64 @@ export async function executeAction(
 					a11yTree,
 					locator,
 				)
-				// Use real keypresses throughout — click to focus, select-all
-				// + delete to clear, then type character by character.
-				// This looks like a real user to the page and triggers all JS
-				// event handlers (React onChange, custom validation, per-char
-				// rendering, etc.). Playwright's fill() bypasses these.
-				// Use force:true on click — inputs often have decorative icon
-				// overlays (search icons, location pins) that cover part of the
-				// element. The input is the correct target regardless.
-				// Use page.keyboard instead of locator.press/pressSequentially
-				// because locator methods also do actionability checks that fail
-				// on covered inputs.
-				await locator.click({ force: true })
-				const selectAll = process.platform === "darwin" ? "Meta+a" : "Control+a"
-				await page.keyboard.press(selectAll)
-				await page.keyboard.press("Backspace")
-				await page.keyboard.type(action.value, { delay: 30 })
 
-				// Verify the value landed correctly. Use evaluate on the
-				// active element to avoid locator actionability timeouts
-				// (the input's accessible name may change after typing).
-				const actual = await page.evaluate(
-					() => {
-						const el = document.activeElement as HTMLInputElement | null
-						return el?.value ?? ""
-					},
-				).catch(() => "")
-				if (actual !== action.value) {
-					if (globals.debug) {
-						console.log(`      [type] Value drifted: got "${actual}", expected "${action.value}" — correcting`)
+				// Detect the element type to choose the right input strategy.
+				// MUI spinbuttons (contentEditable sections) and native date
+				// inputs need fill() instead of char-by-char typing.
+				const ariaRole = await locator.getAttribute("role").catch(() => null)
+				const inputType = await locator.getAttribute("type").catch(() => null)
+				// Also check the a11y tree node's role (more reliable than DOM
+				// attribute for elements resolved by ref).
+				const a11yRole = action.ref ? findNodeByRef(a11yTree, action.ref)?.role : null
+				const isSpinbutton = ariaRole === "spinbutton" || a11yRole === "spinbutton"
+				const isDateInput = inputType === "date" || inputType === "datetime-local" || inputType === "time"
+
+				if (isSpinbutton || isDateInput) {
+					// Spinbuttons (MUI date picker sections) and native date
+					// inputs: click to focus, then use fill() which sets the
+					// value programmatically — char-by-char doesn't work on
+					// contentEditable spinbuttons or formatted date inputs.
+					await locator.click({ force: true })
+					try {
+						await locator.fill(action.value)
+					} catch {
+						// fill() may fail on contentEditable — fall back to
+						// select-all + type which works on some implementations
+						const selectAll = process.platform === "darwin" ? "Meta+a" : "Control+a"
+						await page.keyboard.press(selectAll)
+						await page.keyboard.type(action.value, { delay: 30 })
 					}
+					if (globals.debug) {
+						console.log(`      [type] Used fill() for ${isSpinbutton ? "spinbutton" : "date input"}`)
+					}
+				} else {
+					// Regular inputs: use real keypresses — click to focus,
+					// select-all + delete to clear, then type char by char.
+					// This looks like a real user and triggers all JS event
+					// handlers (React onChange, custom validation, etc.).
+					// Use force:true — inputs often have decorative overlays.
+					await locator.click({ force: true })
+					const selectAll = process.platform === "darwin" ? "Meta+a" : "Control+a"
 					await page.keyboard.press(selectAll)
 					await page.keyboard.press("Backspace")
 					await page.keyboard.type(action.value, { delay: 30 })
+
+					// Verify the value landed correctly. Use evaluate on the
+					// active element to avoid locator actionability timeouts.
+					const actual = await page.evaluate(
+						() => {
+							const el = document.activeElement as HTMLInputElement | null
+							return el?.value ?? ""
+						},
+					).catch(() => "")
+					if (actual !== action.value) {
+						if (globals.debug) {
+							console.log(`      [type] Value drifted: got "${actual}", expected "${action.value}" — correcting`)
+						}
+						await page.keyboard.press(selectAll)
+						await page.keyboard.press("Backspace")
+						await page.keyboard.type(action.value, { delay: 30 })
+					}
 				}
 				break
 			}
@@ -513,7 +575,8 @@ export async function executeAction(
 						a11yTree,
 						locator,
 					)
-					capturedText = (await locator.textContent() ?? "").trim()
+					// Try inputValue() first (for inputs/textareas), fall back to textContent
+					capturedText = (await locator.inputValue().catch(() => null) ?? await locator.textContent() ?? "").trim()
 
 					// If the variable name or step implies we need a number but
 					// the captured text has none, the LLM likely picked the wrong

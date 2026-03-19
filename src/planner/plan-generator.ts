@@ -26,6 +26,8 @@ export interface PlanRecorder {
 	): void
 	/** Produce the final heuristic plan from all recorded steps. */
 	finalize(): HeuristicPlan
+	/** Produce a partial plan (from a failed run) with the remaining input steps to resume. */
+	finalizePartial(remainingSteps: string[]): HeuristicPlan
 }
 
 /**
@@ -103,6 +105,20 @@ export function createPlanRecorder(
 				generatedAt: new Date().toISOString(),
 				greenlightVersion: "0.1.0",
 				steps,
+			}
+		},
+
+		finalizePartial(remainingSteps: string[]) {
+			return {
+				suiteSlug,
+				testSlug,
+				sourceHash,
+				model,
+				generatedAt: new Date().toISOString(),
+				greenlightVersion: "0.1.0",
+				steps,
+				partial: true,
+				remainingSteps,
 			}
 		},
 	}
