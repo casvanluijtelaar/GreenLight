@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Conditional if/then/else steps** — new `IF_VISIBLE`/`IF_CONTAINS`/`IF_URL` planner tokens for inline conditionals. Handle cookie banners, feature flags, and optional UI elements. CLI shows `[then]`/`[else]`/`[skipped]` tags. Both branches cacheable in heuristic plans with drift detection on branch switch.
+- **Block conditional YAML syntax** — multi-step conditional branches using YAML structure (`if:`/`then:`/`else:` keys). Supports multiple steps per branch and optional else. Flattened to inline conditionals at load time — no planner/pilot changes needed.
 - **Date/time picker support** — new `DATEPICK` planner token with natural language time parsing ("10 minutes from now", "tomorrow at 3pm"). Automatically detects picker type: native HTML5 inputs, MUI v7 sectioned spinbuttons, or calendar popups. Dates are always computed fresh — cached runs get current timestamps, never stale ones.
 - **Remembered value assertions** — new `ASSERT_REMEMBERED` planner token checks that a previously remembered value appears on the page. Enables create/verify workflows: generate a random name, save it, then check it appears in a list.
 - **Random test data injection** — steps containing "random" get seeded with a truly random 6-digit number or a human-readable random string.
