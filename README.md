@@ -35,7 +35,8 @@ tests:
 
 GreenLight understands form wizards, custom dropdowns, autocomplete fields, checkbox consent flows, complex date pickers and interactive maps. It fills in forms with realistic test data, handles before/after value comparisons, and works with any UI framework.
 
-The first run uses an LLM to discover the right actions (the **discovery run**). After that, GreenLight caches a concrete action plan and replays it without LLM calls — making subsequent runs fast and deterministic.
+The first run uses the LLM Pilot to discover the right actions (the **pilot** run). 
+After that, GreenLight caches a concrete action plan and replays it without LLM calls — making subsequent runs fast and deterministic.
 
 ## Quick start
 
@@ -183,6 +184,7 @@ Tests are plain English. The Pilot interprets intent, so phrasing is flexible. Q
 | Check | `check the "I agree to terms" checkbox` |
 | Random data | `name the booking a random string` |
 | Date/time | `set the start time to 10 minutes from now` |
+| Count | `count the number of product cards` |
 | Remember | `remember the number of search results` |
 | Compare | `check that the number of results is less than before` |
 | Assert remembered | `check that the booking we just created is visible` |
@@ -372,6 +374,31 @@ steps:
 | `2026-06-15 14:30` | Explicit date and time |
 
 Date picker steps are always computed fresh — even on cached plan replay, the timestamp is recalculated from the current time. This means tests with relative times like "10 minutes from now" never fail due to stale cached dates.
+
+### Counting elements
+
+Count the number of matching elements on the page and store the result for later comparison:
+
+```yaml
+steps:
+  # Count and compare against a previous count
+  - count the number of product cards
+  - apply the "Electronics" filter
+  - check that the number of product cards has decreased
+
+  # Count and compare against a remembered value
+  - remember the number of results shown
+  - apply a filter
+  - check that the number of product cards shown equals the remembered count
+
+  # Count specific elements
+  - count the number of "Add to Cart" buttons
+  - count the number of rows in the results table
+```
+
+**How it works:** GreenLight inspects the live page's accessibility tree to identify all elements matching the description. The LLM determines a common denominator (role, text pattern, or accessible name) that uniquely identifies the target elements, then counts all matches using exact text matching to avoid false positives from headings or breadcrumbs. The count is stored as a number in the value store — the same mechanism used by `remember` — so it works seamlessly with `check that ... has decreased/increased` comparisons.
+
+When a step checks that the number of visible elements equals a remembered value, GreenLight automatically splits it into a count + compare: first count the elements, then compare the count against the stored variable.
 
 ### Value comparisons (remember/compare)
 

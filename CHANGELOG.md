@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-03-19
+
+### Added
+
+- **Count + compare assertions** — steps like `check that the number of product cards equals "product count"` are now automatically split into a `COUNT` + `COMPARE` by the planner. The count result is stored as a variable and compared against the remembered value — no page-text search needed.
+- **Compare supports stored variables as current value** — when the assertion's expected text matches a variable already in the value store (e.g. from a preceding `COUNT`), the comparison uses the stored value directly instead of searching the page.
+
 ## [0.4.0] - 2026-03-19
 
 ### Added
