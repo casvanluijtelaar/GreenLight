@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.4] - 2026-03-20
+
+Performance and reliability improvements for cached plan runs.
+
+### Added
+
+- **`--perf` flag** — per-step performance breakdown showing network wait (`net`), DOM stabilization (`dom`), capture, LLM, and execution times. Works in both pilot and cached runs.
+
+### Changed
+
+- **Faster cached runs** — smarter network idle detection skips unnecessary wait times. Background requests (analytics, media streaming) no longer block step execution. Typical cached step overhead reduced from ~600ms to near-zero when the page is already stable.
+
+### Fixed
+
+- **Cached `clear` action on input fields** — clearing text inputs in cached runs now correctly targets the input element instead of its label.
+- **False drift on client-side navigation** — the pilot now waits for URL updates from client-side routers (Next.js, React Router) before recording the URL fingerprint, preventing false "plan drift" errors on cached replay.
+- **Cached steps running before page loads** — after navigation-triggering clicks, the cached runner now waits for the target page to load before running the next step.
+
 ## [0.7.0] - 2026-03-19
 
 ### Added

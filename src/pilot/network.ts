@@ -20,7 +20,6 @@
 
 import type { Page, Request } from "playwright"
 import type { ConsoleEntry } from "../reporter/types.js"
-import { globals } from "../globals.js"
 
 /**
  * Attach a network request tracker to a page.
@@ -28,8 +27,20 @@ import { globals } from "../globals.js"
  * waits until all in-flight requests have completed (with a grace period
  * to allow follow-up requests to start).
  */
+/** Timing breakdown from the last waitForNetworkIdle call. */
+export interface IdleTiming {
+	/** Time spent waiting for network requests to complete (ms). */
+	network: number
+	/** Time spent waiting for DOM content to stabilize (ms). */
+	content: number
+}
+
 export function attachNetworkTracker(page: Page): {
 	waitForNetworkIdle: (timeoutMs?: number) => Promise<void>
+	/** Invalidate the content cache so the next idle wait does a full check. */
+	invalidate: () => void
+	/** Timing from the last waitForNetworkIdle call. */
+	lastIdleTiming: () => IdleTiming
 } {
 	const pending = new Set<Request>()
 
@@ -37,9 +48,6 @@ export function attachNetworkTracker(page: Page): {
 	function isBackgroundRequest(req: Request): boolean {
 		const url = req.url()
 		const type = req.resourceType()
-
-		// Next.js RSC prefetches (speculative, not needed for current view)
-		if (url.includes("_rsc=")) return true
 
 		// Prefetch/preload/prerender link requests
 		if (type === "prefetch" || type === "ping") return true
@@ -60,26 +68,13 @@ export function attachNetworkTracker(page: Page): {
 		if (!isBackgroundRequest(req)) {
 			pending.add(req)
 		}
-		if (globals.debug) {
-			const bg = isBackgroundRequest(req) ? " (bg)" : ""
-			console.log(`      [net] + ${req.resourceType()} ${req.url().slice(0, 120)}${bg}`)
-		}
 	})
-	page.on("requestfinished", (req) => {
-		pending.delete(req)
-		if (globals.debug) {
-			console.log(`      [net] - ${req.resourceType()} ${req.url().slice(0, 120)}`)
-		}
-	})
-	page.on("requestfailed", (req) => {
-		pending.delete(req)
-		if (globals.debug) {
-			console.log(`      [net] x ${req.resourceType()} ${req.url().slice(0, 120)}`)
-		}
-	})
+	page.on("requestfinished", (req) => pending.delete(req))
+	page.on("requestfailed", (req) => pending.delete(req))
 
 	// Track last known content across calls for fast-path detection
 	let lastContent = ""
+	let _lastTiming: IdleTiming = { network: 0, content: 0 }
 
 	return {
 		/**
@@ -96,14 +91,21 @@ export function attachNetworkTracker(page: Page): {
 			if (pending.size === 0 && lastContent) {
 				try {
 					const current = (await page.locator("body").textContent()) ?? ""
-					if (current === lastContent) return
+					if (current === lastContent) {
+						_lastTiming = { network: 0, content: 0 }
+						return
+					}
 				} catch {
+					_lastTiming = { network: 0, content: 0 }
 					return
 				}
 			}
 
-			// Phase 1: wait for network requests to complete
-			const networkDeadline = performance.now() + timeoutMs
+			// Phase 1: wait for network requests to complete.
+			// Capped at 2s — if requests are still in-flight after that,
+			// they're likely prefetches or slow background requests.
+			const phase1Start = performance.now()
+			const networkDeadline = performance.now() + Math.min(timeoutMs, 2000)
 			const networkGrace = 200
 			let quietSince = pending.size === 0 ? performance.now() : 0
 			while (performance.now() < networkDeadline) {
@@ -115,13 +117,7 @@ export function attachNetworkTracker(page: Page): {
 				}
 				await new Promise((r) => setTimeout(r, 50))
 			}
-
-			if (globals.debug && pending.size > 0) {
-				console.log(`      [net] Phase 1 ended with ${String(pending.size)} pending:`)
-				for (const req of pending) {
-					console.log(`        ${req.resourceType()} ${req.url().slice(0, 120)}`)
-				}
-			}
+			const phase1Duration = performance.now() - phase1Start
 
 			// Phase 2: wait for DOM content to stabilize.
 			// Use textContent (not innerText) because some frameworks
@@ -129,6 +125,7 @@ export function attachNetworkTracker(page: Page): {
 			// textContent sees all DOM text regardless of CSS.
 			// Own timeout (1.5s) — animations/transitions should be done by then.
 			// If content is still changing, it's live content and we shouldn't block.
+			const phase2Start = performance.now()
 			const contentDeadline = performance.now() + 1500
 			const contentGrace = 300
 			let previous: string
@@ -136,6 +133,7 @@ export function attachNetworkTracker(page: Page): {
 				previous =
 					(await page.locator("body").textContent()) ?? ""
 			} catch {
+				_lastTiming = { network: phase1Duration, content: performance.now() - phase2Start }
 				return
 			}
 			let stableSince = performance.now()
@@ -146,6 +144,7 @@ export function attachNetworkTracker(page: Page): {
 					current =
 						(await page.locator("body").textContent()) ?? ""
 				} catch {
+					_lastTiming = { network: phase1Duration, content: performance.now() - phase2Start }
 					return
 				}
 				if (current !== previous) {
@@ -153,11 +152,21 @@ export function attachNetworkTracker(page: Page): {
 					stableSince = performance.now()
 				} else if (performance.now() - stableSince >= contentGrace) {
 					lastContent = current
+					_lastTiming = { network: phase1Duration, content: performance.now() - phase2Start }
 					return
 				}
 			}
 			// Timed out — save whatever we have
 			lastContent = previous
+			_lastTiming = { network: phase1Duration, content: performance.now() - phase2Start }
+		},
+
+		invalidate() {
+			lastContent = ""
+		},
+
+		lastIdleTiming() {
+			return _lastTiming
 		},
 	}
 }

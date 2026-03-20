@@ -52,6 +52,10 @@ export interface PilotOptions {
 	recorder?: PlanRecorder
 	/** Wait for network requests to settle before capturing page state. */
 	waitForNetworkIdle?: () => Promise<void>
+	/** Invalidate the network idle cache (call after navigation). */
+	invalidateNetworkCache?: () => void
+	/** Timing from the last waitForNetworkIdle call. */
+	lastIdleTiming?: () => { network: number; content: number }
 	/** Capture post-step screenshots (default: false). */
 	screenshots?: boolean
 	/** Called after each step completes, for live progress output. */
@@ -508,7 +512,10 @@ export async function runTestCase(
 					if (options.waitForNetworkIdle) {
 						await options.waitForNetworkIdle()
 					}
-					timing.networkIdle = performance.now() - t0
+					const idleDur = performance.now() - t0
+					const idle = options.lastIdleTiming?.() ?? { network: idleDur, content: 0 }
+					timing.networkIdle = idle.network
+					timing.contentIdle = idle.content
 					t0 = performance.now()
 					const state = await capturePageState(page, options.consoleDrain, {
 						mapAdapter: mapAdapter ?? undefined,
@@ -524,7 +531,12 @@ export async function runTestCase(
 				if (options.waitForNetworkIdle) {
 					await options.waitForNetworkIdle()
 				}
-				timing.networkIdle = performance.now() - t0
+				{
+					const idleDur = performance.now() - t0
+					const idle = options.lastIdleTiming?.() ?? { network: idleDur, content: 0 }
+					timing.networkIdle = idle.network
+					timing.contentIdle = idle.content
+				}
 				trace.log("capture:start")
 				t0 = performance.now()
 				const state = await capturePageState(page, options.consoleDrain, {
@@ -717,6 +729,8 @@ export async function runTestCase(
 							await page.waitForURL((url) => url.href !== preUrl, { timeout: 3000 })
 						} catch { /* URL didn't change — that's fine, not all clicks navigate */ }
 					}
+					// Invalidate content cache so next idle wait does a full check
+					options.invalidateNetworkCache?.()
 				}
 				timing.settle = performance.now() - settleStart
 			}

@@ -63,7 +63,8 @@ function printStepResult(stepResult: StepResult): void {
 	let phases = ""
 	if (t && globals.perf) {
 		const parts: string[] = []
-		if (t.networkIdle) parts.push(`idle:${String(Math.round(t.networkIdle))}`)
+		if (t.networkIdle) parts.push(`net:${String(Math.round(t.networkIdle))}`)
+		if (t.contentIdle) parts.push(`dom:${String(Math.round(t.contentIdle))}`)
 		if (t.capture) parts.push(`capture:${String(Math.round(t.capture))}`)
 		if (t.llm) parts.push(`llm:${String(Math.round(t.llm))}`)
 		if (t.execute) parts.push(`exec:${String(Math.round(t.execute))}`)
@@ -285,7 +286,7 @@ export async function runCommand(
 						persistentContext ?? (await createContext(browser!, browserOpts))
 					const page = await createPage(context, { headed: browserOpts.headed })
 					const { drain } = attachConsoleCollector(page)
-					const { waitForNetworkIdle } = attachNetworkTracker(page)
+					const { waitForNetworkIdle, invalidate: invalidateNetworkCache, lastIdleTiming } = attachNetworkTracker(page)
 					globals.trace.attachToPage(page)
 
 					try {
@@ -312,6 +313,8 @@ export async function runCommand(
 						// Fast run — replay cached plan
 						result = await runCachedPlan(page, cachedPlan, test.name, {
 							waitForNetworkIdle,
+							invalidateNetworkCache,
+							lastIdleTiming,
 							onStepComplete: printStepResult,
 							consoleDrain: drain,
 						})
@@ -344,7 +347,7 @@ export async function runCommand(
 								headed: browserOpts.headed,
 							})
 							const { drain: drain2 } = attachConsoleCollector(page2)
-							const { waitForNetworkIdle: waitForNetworkIdle2 } =
+							const { waitForNetworkIdle: waitForNetworkIdle2, invalidate: invalidateNetworkCache2, lastIdleTiming: lastIdleTiming2 } =
 								attachNetworkTracker(page2)
 							globals.trace.attachToPage(page2)
 							await page2.goto(baseUrl)
@@ -364,6 +367,8 @@ export async function runCommand(
 								consoleDrain: drain2,
 								recorder,
 								waitForNetworkIdle: waitForNetworkIdle2,
+								invalidateNetworkCache: invalidateNetworkCache2,
+								lastIdleTiming: lastIdleTiming2,
 								onStepComplete: printStepResult,
 							})
 							result.mode = "pilot"
@@ -402,6 +407,8 @@ export async function runCommand(
 								test.name,
 								{
 									waitForNetworkIdle,
+									invalidateNetworkCache,
+									lastIdleTiming,
 									onStepComplete: printStepResult,
 									consoleDrain: drain,
 								},
@@ -420,7 +427,7 @@ export async function runCommand(
 								const ctx3 = persistentContext ?? (await createContext(browser!, browserOpts))
 								const page3 = await createPage(ctx3, { headed: browserOpts.headed })
 								const { drain: drain3 } = attachConsoleCollector(page3)
-								const { waitForNetworkIdle: wni3 } = attachNetworkTracker(page3)
+								const { waitForNetworkIdle: wni3, invalidate: inv3, lastIdleTiming: lit3 } = attachNetworkTracker(page3)
 								globals.trace.attachToPage(page3)
 								await page3.goto(baseUrl)
 								// Fall through to normal pilot below with full steps
@@ -435,6 +442,8 @@ export async function runCommand(
 									consoleDrain: drain3,
 									recorder: recorder3,
 									waitForNetworkIdle: wni3,
+									invalidateNetworkCache: inv3,
+									lastIdleTiming: lit3,
 									onStepComplete: printStepResult,
 								})
 								result.mode = "pilot"
@@ -482,6 +491,8 @@ export async function runCommand(
 							consoleDrain: drain,
 							recorder,
 							waitForNetworkIdle,
+							invalidateNetworkCache,
+							lastIdleTiming,
 							onStepComplete: printStepResult,
 						})
 						result = pilotResult

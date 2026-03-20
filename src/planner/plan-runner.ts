@@ -470,6 +470,8 @@ export async function runCachedPlan(
 	testName: string,
 	options?: {
 		waitForNetworkIdle?: () => Promise<void>
+		invalidateNetworkCache?: () => void
+		lastIdleTiming?: () => { network: number; content: number }
 		onStepComplete?: (result: StepResult) => void
 		consoleDrain?: () => import("../reporter/types.js").ConsoleEntry[]
 	},
@@ -632,8 +634,21 @@ export async function runCachedPlan(
 
 		const result = await executeHeuristicStep(page, step, mapAdapter)
 
-		// No post-step settle in the cached runner — the pre-step
-		// waitForNetworkIdle at the top of the loop handles it.
+		// After actions that may trigger navigation, wait for the page to
+		// arrive at the expected URL. The cached plan knows the post-step URL
+		// from the discovery run — use it to detect and wait for navigation
+		// (both full-page and client-side pushState).
+		if (result.success && step.action !== "assert") {
+			const expectedUrl = step.postStepFingerprint.url
+			const currentUrl = page.url()
+			if (expectedUrl && hasPathDrift(expectedUrl, currentUrl)) {
+				try {
+					const expectedPath = new URL(expectedUrl).pathname
+					await page.waitForURL(`**${expectedPath}*`, { timeout: 10000 })
+				} catch { /* URL didn't reach expected path — drift check will catch it */ }
+			}
+			options?.invalidateNetworkCache?.()
+		}
 
 		if (!result.success) {
 			drifted = true
@@ -692,13 +707,17 @@ export async function runCachedPlan(
 			},
 			status: "passed",
 			duration: performance.now() - stepStart,
-			timing: globals.perf ? {
-				capture: 0,
-				llm: 0,
-				execute: result.duration,
-				postCapture: 0,
-				networkIdle: networkIdleTime,
-			} : undefined,
+			timing: globals.perf ? (() => {
+				const idle = options?.lastIdleTiming?.() ?? { network: 0, content: 0 }
+				return {
+					capture: 0,
+					llm: 0,
+					execute: result.duration,
+					postCapture: 0,
+					networkIdle: idle.network,
+					contentIdle: idle.content,
+				}
+			})() : undefined,
 		})
 	}
 
