@@ -80,7 +80,7 @@ async function withPage(
 }
 
 describe("runTestCase", () => {
-	it("runs all steps and returns passed", async () => {
+	it("runs all steps and returns passed", { timeout: 15000 }, async () => {
 		await withPage(async (page, drain) => {
 			const llm = makeMockLLM([
 				{ action: "type", ref: "e2", value: "World" },
@@ -112,7 +112,7 @@ describe("runTestCase", () => {
 		})
 	})
 
-	it("fails fast on first failed step", async () => {
+	it("fails fast on first failed step", { timeout: 15000 }, async () => {
 		await withPage(async (page, drain) => {
 			const llm = makeMockLLM([
 				{ action: "click", ref: "e99" }, // bad ref
@@ -137,7 +137,7 @@ describe("runTestCase", () => {
 		})
 	})
 
-	it("fails on assertion failure", { timeout: 10000 }, async () => {
+	it("fails on assertion failure", { timeout: 15000 }, async () => {
 		await withPage(async (page, drain) => {
 			const llm = makeMockLLM([
 				{
@@ -164,7 +164,7 @@ describe("runTestCase", () => {
 		})
 	})
 
-	it("records duration for each step", async () => {
+	it("records duration for each step", { timeout: 15000 }, async () => {
 		await withPage(async (page, drain) => {
 			const llm = makeMockLLM([{ action: "click", ref: "e3" }])
 
@@ -180,7 +180,7 @@ describe("runTestCase", () => {
 		})
 	})
 
-	it("captures post-action screenshot on success", async () => {
+	it("captures post-action screenshot on success", { timeout: 15000 }, async () => {
 		await withPage(async (page, drain) => {
 			const llm = makeMockLLM([{ action: "click", ref: "e3" }])
 

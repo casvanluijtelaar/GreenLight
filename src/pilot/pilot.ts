@@ -56,6 +56,8 @@ export interface PilotOptions {
 	invalidateNetworkCache?: () => void
 	/** Timing from the last waitForNetworkIdle call. */
 	lastIdleTiming?: () => { network: number; content: number }
+	/** Drain the last navigation error (4xx/5xx). */
+	drainNavigationError?: () => string | null
 	/** Capture post-step screenshots (default: false). */
 	screenshots?: boolean
 	/** Called after each step completes, for live progress output. */
@@ -516,6 +518,8 @@ export async function runTestCase(
 					const idle = options.lastIdleTiming?.() ?? { network: idleDur, content: 0 }
 					timing.networkIdle = idle.network
 					timing.contentIdle = idle.content
+					const navErr = options.drainNavigationError?.()
+					if (navErr) throw new Error(navErr)
 					t0 = performance.now()
 					const state = await capturePageState(page, options.consoleDrain, {
 						mapAdapter: mapAdapter ?? undefined,
@@ -537,6 +541,8 @@ export async function runTestCase(
 					timing.networkIdle = idle.network
 					timing.contentIdle = idle.content
 				}
+				const navErr = options.drainNavigationError?.()
+				if (navErr) throw new Error(navErr)
 				trace.log("capture:start")
 				t0 = performance.now()
 				const state = await capturePageState(page, options.consoleDrain, {

@@ -286,7 +286,7 @@ export async function runCommand(
 						persistentContext ?? (await createContext(browser!, browserOpts))
 					const page = await createPage(context, { headed: browserOpts.headed })
 					const { drain } = attachConsoleCollector(page)
-					const { waitForNetworkIdle, invalidate: invalidateNetworkCache, lastIdleTiming } = attachNetworkTracker(page)
+					const { waitForNetworkIdle, invalidate: invalidateNetworkCache, lastIdleTiming, drainNavigationError } = attachNetworkTracker(page)
 					globals.trace.attachToPage(page)
 
 					try {
@@ -315,6 +315,7 @@ export async function runCommand(
 							waitForNetworkIdle,
 							invalidateNetworkCache,
 							lastIdleTiming,
+							drainNavigationError,
 							onStepComplete: printStepResult,
 							consoleDrain: drain,
 						})
@@ -347,7 +348,7 @@ export async function runCommand(
 								headed: browserOpts.headed,
 							})
 							const { drain: drain2 } = attachConsoleCollector(page2)
-							const { waitForNetworkIdle: waitForNetworkIdle2, invalidate: invalidateNetworkCache2, lastIdleTiming: lastIdleTiming2 } =
+							const { waitForNetworkIdle: waitForNetworkIdle2, invalidate: invalidateNetworkCache2, lastIdleTiming: lastIdleTiming2, drainNavigationError: drainNavErr2 } =
 								attachNetworkTracker(page2)
 							globals.trace.attachToPage(page2)
 							await page2.goto(baseUrl)
@@ -369,6 +370,7 @@ export async function runCommand(
 								waitForNetworkIdle: waitForNetworkIdle2,
 								invalidateNetworkCache: invalidateNetworkCache2,
 								lastIdleTiming: lastIdleTiming2,
+								drainNavigationError: drainNavErr2,
 								onStepComplete: printStepResult,
 							})
 							result.mode = "pilot"
@@ -409,6 +411,7 @@ export async function runCommand(
 									waitForNetworkIdle,
 									invalidateNetworkCache,
 									lastIdleTiming,
+									drainNavigationError,
 									onStepComplete: printStepResult,
 									consoleDrain: drain,
 								},
@@ -427,7 +430,7 @@ export async function runCommand(
 								const ctx3 = persistentContext ?? (await createContext(browser!, browserOpts))
 								const page3 = await createPage(ctx3, { headed: browserOpts.headed })
 								const { drain: drain3 } = attachConsoleCollector(page3)
-								const { waitForNetworkIdle: wni3, invalidate: inv3, lastIdleTiming: lit3 } = attachNetworkTracker(page3)
+								const { waitForNetworkIdle: wni3, invalidate: inv3, lastIdleTiming: lit3, drainNavigationError: dne3 } = attachNetworkTracker(page3)
 								globals.trace.attachToPage(page3)
 								await page3.goto(baseUrl)
 								// Fall through to normal pilot below with full steps
@@ -444,6 +447,7 @@ export async function runCommand(
 									waitForNetworkIdle: wni3,
 									invalidateNetworkCache: inv3,
 									lastIdleTiming: lit3,
+									drainNavigationError: dne3,
 									onStepComplete: printStepResult,
 								})
 								result.mode = "pilot"
@@ -493,6 +497,7 @@ export async function runCommand(
 							waitForNetworkIdle,
 							invalidateNetworkCache,
 							lastIdleTiming,
+							drainNavigationError,
 							onStepComplete: printStepResult,
 						})
 						result = pilotResult

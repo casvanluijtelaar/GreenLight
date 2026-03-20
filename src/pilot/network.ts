@@ -42,8 +42,28 @@ export function attachNetworkTracker(page: Page): {
 	invalidate: () => void
 	/** Timing from the last waitForNetworkIdle call. */
 	lastIdleTiming: () => IdleTiming
+	/** Drain the last navigation error (4xx/5xx), if any. Returns null if no error. */
+	drainNavigationError: () => string | null
 } {
 	const pending = new Set<Request>()
+	let navigationError: string | null = null
+
+	// Track navigation responses (document requests) for HTTP error detection
+	page.on("response", async (response) => {
+		const req = response.request()
+		if (req.resourceType() !== "document") return
+		const status = response.status()
+		if (status >= 400) {
+			let body = ""
+			try {
+				const text = await response.text()
+				// Extract a useful snippet — strip HTML tags and take the first 200 chars
+				body = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200)
+			} catch { /* body not readable */ }
+			const msg = `HTTP ${String(status)} ${response.statusText()} at ${response.url().slice(0, 120)}`
+			navigationError = body ? `${msg}\n${body}` : msg
+		}
+	})
 
 	/** Requests that don't affect page readiness. */
 	function isBackgroundRequest(req: Request): boolean {
@@ -175,6 +195,12 @@ export function attachNetworkTracker(page: Page): {
 
 		lastIdleTiming() {
 			return _lastTiming
+		},
+
+		drainNavigationError() {
+			const err = navigationError
+			navigationError = null
+			return err
 		},
 	}
 }

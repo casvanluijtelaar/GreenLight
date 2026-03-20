@@ -472,6 +472,7 @@ export async function runCachedPlan(
 		waitForNetworkIdle?: () => Promise<void>
 		invalidateNetworkCache?: () => void
 		lastIdleTiming?: () => { network: number; content: number }
+		drainNavigationError?: () => string | null
 		onStepComplete?: (result: StepResult) => void
 		consoleDrain?: () => import("../reporter/types.js").ConsoleEntry[]
 	},
@@ -502,6 +503,20 @@ export async function runCachedPlan(
 				await options.waitForNetworkIdle()
 			}
 			networkIdleTime = performance.now() - t0
+		}
+
+		// Check for HTTP errors from the previous navigation
+		const navError = options?.drainNavigationError?.()
+		if (navError) {
+			drifted = true
+			recordStep({
+				step: step.originalStep,
+				action: null,
+				status: "failed",
+				duration: performance.now() - stepStart,
+				error: navError,
+			})
+			break
 		}
 
 		// Handle conditional steps — evaluate condition and splice chosen branch
