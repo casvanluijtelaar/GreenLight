@@ -10,6 +10,9 @@ No selectors. No XPaths. No test IDs, drivers or glue code. Just describe what a
 
 ---
 
+> [!WARNING]
+> GreenLight is very new and not battle tested yet. YMMV.
+
 **[How it works](#how-it-works)** | **[Quick start](#quick-start)** | **[Project configuration](#project-configuration)** | **[CLI](#cli)** | **[Test syntax](#test-syntax)** | **[Writing test steps](#writing-test-steps)** | **[Cached plans](#cached-plans)** | **[LLM setup](#llm-setup)** | **[Architecture](#architecture)** | **[Avoiding side effects](#avoiding-side-effects-in-your-app)** | **[CI/CD](#cicd)**
 
 ---

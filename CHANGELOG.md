@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.6] - 2026-03-22
+
+Page error detection for navigation failures.
+
+### Added
+
+- **Page error logging** — HTTP 4xx/5xx responses on navigation are now detected and reported as step failures, in both pilot and cached runs. Previously, navigating to a broken page would silently continue until a later step failed with a confusing error.
+
 ## [0.7.5] - 2026-03-20
 
 Faster network idle detection.

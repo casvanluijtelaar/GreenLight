@@ -67,10 +67,12 @@ Respond with ONLY a single action line in the text format described below. No ma
 
 The page state may be provided in different levels of detail:
 - Full state: complete accessibility tree with enrichment data (first step and after navigation).
-- Tree diff: only the added/removed lines from the accessibility tree (when a small part of the page changed, e.g. a form wizard step). Combine this with the full tree from earlier in the conversation — unchanged elements keep the same refs.
+- Tree diff: only the added/removed lines from the accessibility tree (when a small part of the page changed, e.g. a form wizard step). 
+  Combine this with the full tree from earlier in the conversation — unchanged elements keep the same refs.
 - Unchanged: the page is identical to the previous step.
 
-Element refs (e1, e2, ...) are STABLE within a test case — the same element always keeps the same ref across captures. You can safely reuse refs from earlier messages if the diff doesn't mention them as removed.
+Element refs (e1, e2, ...) are STABLE within a test case — the same element always keeps the same ref across captures. 
+You can safely reuse refs from earlier messages if the diff doesn't mention them as removed.
 
 Each element in the tree may include enrichment properties indented below it:
 - "text": the visible text content (only shown when different from the element's a11y name)
@@ -87,11 +89,14 @@ Example:
 
 ═══ Element targeting ═══
 
-- ALWAYS use "ref" to target elements. The enriched accessibility tree shows each element's identity (role + name), visible text, placeholder, and value — use these to match the step description to the right element.
+- ALWAYS use "ref" to target elements. The enriched accessibility tree shows each element's identity (role + name), 
+  visible text, placeholder, and value — use these to match the step description to the right element.
 - Use "text" ONLY as a last resort when the element is genuinely not in the accessibility tree. This is rare.
 - Never guess a ref. If you cannot confidently identify the element in the tree, use "text".
-- Use enrichment data to match fuzzy descriptions: if the step says "password field", match it to a textbox with placeholder "Enter visitor password".
-- When the step contains a word or phrase in quotes (e.g. the "resultat" count), the target element MUST contain that exact quoted text in its name, text, or value.
+- Use enrichment data to match fuzzy descriptions: if the step says "password field", match it to a textbox 
+  with placeholder "Enter visitor password".
+- When the step contains a word or phrase in quotes (e.g. the "resultat" count), the target element MUST contain 
+  that exact quoted text in its name, text, or value.
 
 ═══ Interaction actions ═══
 
@@ -102,14 +107,17 @@ Example:
   that matches the field name and use it as the value. If the step literally says "random string" or "random number"
   make up a fully random string or integer number that does not need to match the field name.
 - clear: Clear a field, filter, selection, or tag input. Requires "ref" or "text" to identify the element.
-  Works for text inputs (select-all + delete), filter chips with clear/remove buttons, dropdowns with reset buttons, and multi-select tag inputs.
-  The runtime automatically detects the element type and finds the appropriate clear mechanism. Use this for any step that says "clear", "reset", or "remove" a field or filter.
+  Works for text inputs (select-all + delete), filter chips with clear/remove buttons, dropdowns with reset buttons,
+  and multi-select tag inputs.
+  The runtime automatically detects the element type and finds the appropriate clear mechanism. 
+  Use this for any step that says "clear", "reset", or "remove" a field or filter.
 - For date/time inputs: when the step uses relative time expressions like "now plus 1 hour", "tomorrow", or "next week",
   compute the actual date/time value from the current time provided in the page state. 
   Format dates as the input expects (check the placeholder or input type — common formats: 
   "YYYY-MM-DD", "YYYY-MM-DDTHH:mm", "MM/DD/YYYY", "DD/MM/YYYY"). 
 - select: Select a dropdown option. Requires "ref" or "text", and "value" (the option label).
-- autocomplete: Type into an autocomplete field, wait for suggestions, click one. Requires "ref" or "text", "value" (text to type), optionally "option" (suggestion to select — defaults to first).
+- autocomplete: Type into an autocomplete field, wait for suggestions, click one. Requires "ref" or "text",
+  "value" (text to type), optionally "option" (suggestion to select — defaults to first).
 - scroll: Scroll the page or scroll a specific element into view.
   Page scroll: requires "value" — one of "up", "down", "top", or "bottom".
   Element scroll: requires "ref" or "text" to identify the element to scroll into view. No "value" needed.
@@ -118,10 +126,14 @@ Example:
 - wait: Wait for a condition. Requires "value" (description of what to wait for).
 - remember: Capture a value from the page. Requires "ref" or "text" to identify the element, and "rememberAs" (variable name).
   IMPORTANT: Target the most specific element containing the value — not a parent or wrapper.
-- count: Count the number of elements matching a description. Requires "text" (a common denominator text or role description that matches ALL target elements) and "rememberAs" (variable name to store the count).
-  The "text" should be something that uniquely identifies the repeated elements — e.g. a common label, role, or visible text pattern shared by all instances.
-  Look at the accessibility tree to find a role+name pattern that all target elements share. Use the element's accessible name or visible text as the "text" value.
-  IMPORTANT: Choose a "text" value that matches ALL target elements and ONLY the target elements. If the elements have a common role (e.g. "article", "listitem", "row"), prefer using that as a discriminator.
+- count: Count the number of elements matching a description. Requires "text" (a common denominator text or
+  role description that matches ALL target elements) and "rememberAs" (variable name to store the count).
+  The "text" should be something that uniquely identifies the repeated elements — e.g. a common label, role,
+  or visible text pattern shared by all instances.
+  Look at the accessibility tree to find a role+name pattern that all target elements share.
+  Use the element's accessible name or visible text as the "text" value.
+  IMPORTANT: Choose a "text" value that matches ALL target elements and ONLY the target elements. 
+  If the elements have a common role (e.g. "article", "listitem", "row"), prefer using that as a discriminator.
 
 ═══ Assertion actions ═══
 
@@ -134,19 +146,24 @@ Assertion types:
 - url_contains — check the current URL.
 - element_visible / element_not_visible — check element visibility.
 - element_disabled / element_enabled — check if a button is disabled or enabled.
-- element_in_viewport / element_not_in_viewport — check if an element is within the visible viewport at the current scroll position. Use after scroll actions to verify an element was scrolled into (or out of) view.
+- element_in_viewport / element_not_in_viewport — check if an element is within the visible viewport at
+  the current scroll position. Use after scroll actions to verify an element was scrolled into (or out of) view.
 - element_exists / link_exists / field_exists — check element presence.
-- compare — numeric comparison. Requires an additional "compare" field with "operator" (less_than, greater_than, equal, not_equal, less_or_equal, greater_or_equal). Use "ref" to target the element containing the current value.
+- compare — numeric comparison. Requires an additional "compare" field with "operator"
+  (less_than, greater_than, equal, not_equal, less_or_equal, greater_or_equal).
+  Use "ref" to target the element containing the current value.
   Two modes:
   (a) Against a remembered variable: set "variable" to the variable name.
-  (b) Against a literal number: set "literal" to the number and "variable" to "_". Use this when the step compares against a fixed number (0, 5, 10) — NOT a previously remembered value.
+  (b) Against a literal number: set "literal" to the number and "variable" to "_". 
+  Use this when the step compares against a fixed number (0, 5, 10) — NOT a previously remembered value.
 - map_state — assert a condition about the map (see Map section below).
 
 ═══ Map ═══
 
 When a map is detected, the page state includes a "Map state" section with center, zoom, bearing, pitch, bounds, and layers.
 
-For ANY step about the map's position, zoom, area, or content, use assertion type "map_state" — NEVER "contains_text". The map is a WebGL canvas; its content does NOT appear in the DOM.
+For ANY step about the map's position, zoom, area, or content, use assertion type "map_state" — NEVER "contains_text".
+The map is a WebGL canvas; its content does NOT appear in the DOM.
 
 map_state "expected" examples:
 - "map shows <cityname>" or "map shows \\"<cityname>\\"" — searches rendered features.
@@ -196,9 +213,11 @@ assert map_state "map shows Stockholm"
 // 2. PLAN_SYSTEM_PROMPT — Step planner (no page context)
 // ─────────────────────────────────────────────────────────────────────
 
-export const PLAN_SYSTEM_PROMPT = `You are converting natural-language E2E test steps into a line-based action format. Output one line per action. A single input step may produce multiple output lines.
+export const PLAN_SYSTEM_PROMPT = `You are converting natural-language E2E test steps into a line-based action format. 
+Output one line per action. A single input step may produce multiple output lines.
 
-IMPORTANT: Prefix every output line with the input step number it came from, using the format "#N " (e.g. "#1 ", "#2 "). When one input step produces multiple output lines, all of them get the same prefix.
+IMPORTANT: Prefix every output line with the input step number it came from, using the format "#N " (e.g. "#1 ", "#2 ").
+When one input step produces multiple output lines, all of them get the same prefix.
 
 ═══ Action syntax (one per line) ═══
 
