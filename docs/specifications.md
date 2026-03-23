@@ -29,14 +29,14 @@ The AI driven execution engine that reads a step, observes the current state of 
 #### 1.1 Plain-English Step Syntax
 Tests are written as ordered lists of plain-language instructions. The Pilot interprets intent, so exact phrasing is flexible, but the following patterns should be reliably understood.
 
-**Language:** Step descriptions that reference page content (element labels, button text, headings, counts, etc.) must use the same language as the application under test. GreenLight uses keywords from step text to locate elements on the page — if the step says "products" but the page displays "produkter", the element will not be found. Structural keywords like "click", "check that", "greater than" can remain in English, but content words must match the page.
+**Language:** Step descriptions that reference page content (element labels, button text, headings, counts, etc.) must use the same language as the application under test. GreenLight uses keywords from step text to locate elements on the page. If the step says "products" but the page displays "produkter", the element will not be found. Structural keywords like "click", "check that", "greater than" can remain in English, but content words must match the page.
 
 ```
-# Good — Swedish page, Swedish content words:
+# Good, Swedish page, Swedish content words:
 - check that the count of produkter shown is greater than 0
 - click "Lägg i varukorg"
 
-# Bad — Swedish page, English content words:
+# Bad, Swedish page, English content words:
 - check that the count of products shown is greater than 0
 - click "Add to cart"
 ```
@@ -140,7 +140,7 @@ go to "/settings"
 ### 2. Test Execution
 
 #### 2.1 AI-Based Element Resolution
-The Pilot locates elements using a **dual-representation strategy**: accessibility tree first, visible text fallback.
+The Pilot locates elements using a **dual-representation strategy**: Accessibility tree first, visible text fallback.
 
 **Primary: Accessibility Tree Snapshots**
 After each action, Playwright captures the page's accessibility tree via `page.locator("body").ariaSnapshot()` as a compact YAML-like structure. During parsing, each interactive element receives a stable reference ID (e.g., `e21`). The Pilot resolves step targets against this structured data:
@@ -152,11 +152,11 @@ This approach is token-efficient and resilient to CSS/layout changes that don't 
 
 **Element Resolution Strategy**
 When the Pilot returns an element ref, the Action Executor resolves it to a Playwright locator using a multi-strategy approach (tried in order):
-1. **Chained hierarchy** — walk the a11y tree path from ancestor to target, chaining `getByRole` calls through named ancestors for disambiguation.
-2. **Direct role + exact name** — `page.getByRole(role, { name, exact: true })`.
-3. **Label** — `page.getByLabel(name, { exact: true })` for form inputs.
-4. **Placeholder** — `page.getByPlaceholder(name, { exact: true })` for text inputs.
-5. **Direct role + loose name** — `page.getByRole(role, { name })` without exact matching.
+1. **Chained hierarchy**: Walk the a11y tree path from ancestor to target, chaining `getByRole` calls through named ancestors for disambiguation.
+2. **Direct role + exact name**: `page.getByRole(role, { name, exact: true })`.
+3. **Label**: `page.getByLabel(name, { exact: true })` for form inputs.
+4. **Placeholder**: `page.getByPlaceholder(name, { exact: true })` for text inputs.
+5. **Direct role + loose name**: `page.getByRole(role, { name })` without exact matching.
 
 **Fallback: Visible Text Matching**
 When the target element is not in the accessibility tree (e.g., page markup lacks proper ARIA roles), the LLM returns a `text` field instead of a `ref`. The executor falls back to locating the element by its visible text content using `getByRole("link"/"button")` and `getByText` with both exact and loose matching.
@@ -182,22 +182,22 @@ Since the tool targets staging environments, it must handle login flows:
 #### 2.4 Two-Phase Execution: Plan Then Resolve
 The Pilot uses a two-phase approach for each test case:
 
-1. **Planning phase** — Before any browser interaction, the full list of natural-language steps is sent to the LLM in a single request. The LLM interprets each step and returns a flat list of atomic actions. Steps that can be resolved without page state (assertions with literal text, navigation, key presses) are pre-resolved into concrete actions. Steps that require seeing the page (clicks, typing into specific fields) are marked as needing runtime resolution.
-2. **Execution phase** — The Pilot iterates through the planned steps. Pre-resolved actions execute directly without an LLM call. Page-dependent steps go through the full capture → LLM → execute cycle.
+1. **Planning phase**: Before any browser interaction, the full list of natural-language steps is sent to the LLM in a single request. The LLM interprets each step and returns a flat list of atomic actions. Steps that can be resolved without page state (assertions with literal text, navigation, key presses) are pre-resolved into concrete actions. Steps that require seeing the page (clicks, typing into specific fields) are marked as needing runtime resolution.
+2. **Execution phase**: The Pilot iterates through the planned steps. Pre-resolved actions execute directly without an LLM call. Page-dependent steps go through the full capture → LLM → execute cycle.
 
-This approach reduces LLM calls significantly — often by 50% or more — since assertions, navigation, and key presses are resolved in the single planning call.
+This approach reduces LLM calls significantly, often by 50% or more, since assertions, navigation, and key presses are resolved in the single planning call.
 
 If planning fails (e.g., LLM error), the Pilot falls back to runtime resolution for all steps.
 
 #### 2.5 Step Execution & Retry
 Each step is executed with:
 - A configurable **timeout** (default: 30 seconds) for the AI to locate elements and complete the action.
-- Automatic **retry** on transient failures (e.g., element not yet visible due to animation) — planned for a future step.
+- Automatic **retry** on transient failures (e.g., element not yet visible due to animation), planned for a future step.
 - A **screenshot** captured after each successful step for debugging and reporting.
-- **Navigation handling** — actions that trigger page navigation are detected via `framenavigated` events, and the executor waits for `domcontentloaded` before proceeding.
+- **Navigation handling**: Actions that trigger page navigation are detected via `framenavigated` events, and the executor waits for `domcontentloaded` before proceeding.
 
 #### 2.6 Parallel Execution
-Multiple test cases within a suite can run in parallel using **Playwright Browser Contexts** — isolated sessions sharing a single Chromium process. This is significantly more memory-efficient than spawning separate browser processes per test case and scales linearly to at least 8 concurrent contexts.
+Multiple test cases within a suite can run in parallel using **Playwright Browser Contexts**, isolated sessions sharing a single Chromium process. This is significantly more memory-efficient than spawning separate browser processes per test case and scales linearly to at least 8 concurrent contexts.
 
 ### 3. Cached Heuristic Test Plans
 
@@ -205,8 +205,8 @@ Multiple test cases within a suite can run in parallel using **Playwright Browse
 
 Running every test step through the full LLM loop (natural language → accessibility tree → LLM reasoning → action) is accurate but slow and expensive. To enable fast, repeatable test runs without LLM calls, GreenLight implements a two-phase execution model:
 
-1. **Discovery run (full LLM)** — The Pilot executes the test as normal, using the LLM to interpret each natural-language step. During this run, it records a **heuristic test plan**: a concrete, element-level plan that replaces natural-language descriptions with detected page elements and deterministic actions.
-2. **Fast run (cached plan)** — On subsequent runs, if the original test definition has not changed, GreenLight replays the cached heuristic plan directly against the browser using Playwright — no LLM calls required.
+1. **Discovery run (full LLM)**: The Pilot executes the test as normal, using the LLM to interpret each natural-language step. During this run, it records a **heuristic test plan**: A concrete, element-level plan that replaces natural-language descriptions with detected page elements and deterministic actions.
+2. **Fast run (cached plan)**: On subsequent runs, if the original test definition has not changed, GreenLight replays the cached heuristic plan directly against the browser using Playwright. No LLM calls required.
 
 This provides the best of both worlds: AI-powered test authoring with deterministic, fast execution.
 
@@ -222,9 +222,9 @@ During a discovery run, the Pilot processes each natural-language step through t
 - For assertion steps: the **concrete assertion** (e.g., `{ type: "contains_text", expected: "Welcome back" }`).
 - A **post-step fingerprint** (URL, page title) to detect when the cached plan has drifted from the actual application state.
 
-The result is a **heuristic test plan** — a sequence of concrete, element-bound actions that can be replayed without LLM involvement.
+The result is a **heuristic test plan**, a sequence of concrete, element-bound actions that can be replayed without LLM involvement.
 
-**Plans are saved per test case, not per suite.** Each passing test case gets its own cached plan. If a test case fails during a discovery run, no plan is saved for that test — the developer must fix the test first. This means a suite can have a mix of cached and uncached test cases: passing tests replay from cache, failing or new tests go through LLM discovery.
+**Plans are saved per test case, not per suite.** Each passing test case gets its own cached plan. If a test case fails during a discovery run, no plan is saved for that test. The developer must fix the test first. This means a suite can have a mix of cached and uncached test cases: passing tests replay from cache, failing or new tests go through LLM discovery.
 
 #### 3.3 Plan Storage
 
@@ -242,15 +242,15 @@ Cached plans are stored in a `.greenlight/` directory at the project root:
 ```
 
 Each plan file contains:
-- The **heuristic steps**: concrete actions with element selectors and expected outcomes.
-- The **source hash**: a SHA-256 hash of the original natural-language test definition (suite variables, reusable step expansions, and all step text that contributed to this test case).
-- **Metadata**: model used, timestamp of generation, GreenLight version.
+- The **heuristic steps**: Concrete actions with element selectors and expected outcomes.
+- The **source hash**: A SHA-256 hash of the original natural-language test definition (suite variables, reusable step expansions, and all step text that contributed to this test case).
+- **Metadata**: Model used, timestamp of generation, GreenLight version.
 
 The `hashes.json` file maps each test case (by suite + test name) to its source hash for fast change detection without reading every plan file.
 
 #### 3.4 Change Detection
 
-Before executing a test case, GreenLight computes the SHA-256 hash of the test case's **effective definition** — the fully resolved step list after variable interpolation and reusable step expansion. This hash is compared against the stored hash in `.greenlight/hashes.json`:
+Before executing a test case, GreenLight computes the SHA-256 hash of the test case's **effective definition**, the fully resolved step list after variable interpolation and reusable step expansion. This hash is compared against the stored hash in `.greenlight/hashes.json`:
 
 - **Hash matches** → use the cached heuristic plan (fast run).
 - **Hash does not match** → discard the cached plan, run a full discovery run, and store the new heuristic plan.
@@ -276,7 +276,7 @@ When a cached heuristic plan is available and valid, the fast run:
 3. After each step, validates the **post-step fingerprint** against expectations. If the page state has drifted significantly (e.g., expected element not found, unexpected URL), the step is marked as a **plan drift failure**.
 4. On plan drift failure: the fast run stops, logs a warning that the cached plan is stale, and optionally falls back to a full discovery run (controlled by `--on-drift` flag: `fail` | `rerun`, default: `fail`).
 
-Assertions in the heuristic plan are evaluated directly against the page state using Playwright queries — no LLM interpretation needed.
+Assertions in the heuristic plan are evaluated directly against the page state using Playwright queries. No LLM interpretation needed.
 
 #### 3.6 API Key Requirements
 
@@ -303,7 +303,7 @@ greenlight run --plan-status
 
 #### 3.8 The `.greenlight` Directory
 
-The `.greenlight/` directory should be added to `.gitignore` by default — cached plans are environment-specific (element selectors may differ between staging deployments). However, teams may choose to commit them if their staging environment is stable, trading portability for faster CI runs.
+The `.greenlight/` directory should be added to `.gitignore` by default. Cached plans are environment-specific (element selectors may differ between staging deployments). However, teams may choose to commit them if their staging environment is stable, trading portability for faster CI runs.
 
 ### 4. Reporting & Debugging
 
@@ -494,7 +494,7 @@ The following are explicitly **not** part of the initial release. They are noted
 
 ### Security
 - Credentials and secrets are never written to reports, logs, or screenshots.
-- The tool runs in the user's own environment — no data leaves the network beyond LLM API calls.
+- The tool runs in the user's own environment. No data leaves the network beyond LLM API calls.
 - The LLM API receives accessibility tree snapshots and screenshots only; it does not receive raw application data, database contents, or full DOM/HTML.
 
 ### Usability
@@ -519,12 +519,12 @@ The following are explicitly **not** part of the initial release. They are noted
 | AI ecosystem | Playwright MCP, @playwright/cli | Limited | browser-use | N/A |
 
 **Rationale:**
-- **Auto-waiting** eliminates flakiness from timing issues — Playwright waits for elements to be actionable before interacting, which is critical when the Pilot drives a real staging environment with unpredictable load times.
+- **Auto-waiting** eliminates flakiness from timing issues. Playwright waits for elements to be actionable before interacting, which is critical when the Pilot drives a real staging environment with unpredictable load times.
 - **Accessibility tree snapshots** are the most token-efficient way to represent page state to the LLM (~2-5KB vs ~100KB+ for screenshots). Playwright exposes this natively.
 - **Browser Contexts** provide lightweight parallel isolation. Running 8 test cases concurrently uses one Chromium process instead of eight.
-- **Multi-browser path** — MVP is Chromium-only, but adding Firefox/WebKit requires zero code changes to the automation layer.
+- **Multi-browser path**: MVP is Chromium-only, but adding Firefox/WebKit requires zero code changes to the automation layer.
 
-**Why not raw CDP?** Projects like browser-use have moved to raw CDP for ~5x faster element extraction. However, this requires rebuilding crash handling, dialog management, iframe support, and file operations from scratch — too much infrastructure burden for an MVP. If Playwright becomes a bottleneck on specific hot paths, we can drop to CDP selectively via Playwright's `CDPSession` API without a full rewrite.
+**Why not raw CDP?** Projects like browser-use have moved to raw CDP for ~5x faster element extraction. However, this requires rebuilding crash handling, dialog management, iframe support, and file operations from scratch, too much infrastructure burden for an MVP. If Playwright becomes a bottleneck on specific hot paths, we can drop to CDP selectively via Playwright's `CDPSession` API without a full rewrite.
 
 ### Page Representation: Accessibility Tree + Text Fallback
 
@@ -563,16 +563,16 @@ Screenshots are captured after every successful step for reports but are not sen
 
 ### MCP Strategy
 
-GreenLight's architecture is informed by Microsoft's Playwright MCP server pattern but does **not** use MCP as a runtime protocol. Instead, we adopt the key architectural insight from Playwright MCP — structured accessibility snapshots with stable element references — as an internal design pattern.
+GreenLight's architecture is informed by Microsoft's Playwright MCP server pattern but does **not** use MCP as a runtime protocol. Instead, we adopt the key architectural insight from Playwright MCP, structured accessibility snapshots with stable element references, as an internal design pattern.
 
 **What we take from Playwright MCP:**
-- **Snapshot-based page representation** — after each browser action, capture the accessibility tree as a compact structured snapshot. Each element gets a stable reference ID (e.g., `e21`) that can be used in subsequent actions.
-- **Element refs as the action interface** — the LLM reasons about accessible names, roles, and states, then returns an element ref. The browser layer resolves that ref to a concrete locator. This decouples the LLM's understanding from implementation details.
-- **Progressive disclosure** — the Pilot does not dump the full page state into every prompt. It provides the a11y snapshot for resolution, and only loads additional context (screenshots, DOM subtrees) when the snapshot is insufficient.
+- **Snapshot-based page representation**: After each browser action, capture the accessibility tree as a compact structured snapshot. Each element gets a stable reference ID (e.g., `e21`) that can be used in subsequent actions.
+- **Element refs as the action interface**: The LLM reasons about accessible names, roles, and states, then returns an element ref. The browser layer resolves that ref to a concrete locator. This decouples the LLM's understanding from implementation details.
+- **Progressive disclosure**: The Pilot does not dump the full page state into every prompt. It provides the a11y snapshot for resolution, and only loads additional context (screenshots, DOM subtrees) when the snapshot is insufficient.
 
 **What we do NOT adopt:**
-- **MCP as a transport protocol** — MCP adds a client/server protocol layer designed for interoperability between different AI tools and hosts. GreenLight is a self-contained tool where the Pilot, browser driver, and LLM client are tightly integrated. The indirection of MCP would add latency and complexity without benefit.
-- **Generic tool discovery** — MCP servers expose tools dynamically for arbitrary AI clients. The Pilot has a fixed, known set of browser actions (click, type, navigate, assert, etc.). Static binding is simpler and faster.
+- **MCP as a transport protocol**: MCP adds a client/server protocol layer designed for interoperability between different AI tools and hosts. GreenLight is a self-contained tool where the Pilot, browser driver, and LLM client are tightly integrated. The indirection of MCP would add latency and complexity without benefit.
+- **Generic tool discovery**: MCP servers expose tools dynamically for arbitrary AI clients. The Pilot has a fixed, known set of browser actions (click, type, navigate, assert, etc.). Static binding is simpler and faster.
 
 **Future MCP consideration:** If GreenLight eventually exposes its browser automation capabilities to external AI agents or IDE integrations (e.g., a GreenLight MCP server that lets Claude Code run tests), MCP becomes the right protocol for that integration surface. This is out of scope for MVP.
 
@@ -580,14 +580,14 @@ GreenLight's architecture is informed by Microsoft's Playwright MCP server patte
 
 The Pilot communicates with the LLM through the **OpenAI-compatible chat completions API**, using **OpenRouter** as the default gateway. This allows any model to be used without code changes.
 
-- **Planning input** — numbered list of all test steps for pre-resolution. Returns a line-based format with pre-resolved actions and `PAGE` markers for steps needing runtime resolution.
-- **Resolution input** — the plain-English step + accessibility tree snapshot (URL, title, formatted a11y tree). Conversation history is maintained within a test case for context.
-- **Structured output** — the LLM returns JSON actions (`{ action, ref?, text?, value?, assertion? }`) parsed by the Pilot. The `ref` field targets a11y tree elements; the `text` field is a fallback for elements not in the tree.
+- **Planning input**: Numbered list of all test steps for pre-resolution. Returns a line-based format with pre-resolved actions and `PAGE` markers for steps needing runtime resolution.
+- **Resolution input**: The plain-English step + accessibility tree snapshot (URL, title, formatted a11y tree). Conversation history is maintained within a test case for context.
+- **Structured output**: The LLM returns JSON actions (`{ action, ref?, text?, value?, assertion? }`) parsed by the Pilot. The `ref` field targets a11y tree elements; the `text` field is a fallback for elements not in the tree.
 
 **Configuration:**
-- `model` — configurable per suite in YAML or via `--model` CLI flag. Default: `anthropic/claude-sonnet-4` via OpenRouter.
-- `OPENROUTER_API_KEY` / `LLM_API_KEY` — API key from environment variable.
-- `--llm-base-url` — override the API endpoint to use any OpenAI-compatible provider (direct OpenAI, Azure, local Ollama, etc.).
+- `model`: Configurable per suite in YAML or via `--model` CLI flag. Default: `anthropic/claude-sonnet-4` via OpenRouter.
+- `OPENROUTER_API_KEY` / `LLM_API_KEY`: API key from environment variable.
+- `--llm-base-url`: Override the API endpoint to use any OpenAI-compatible provider (direct OpenAI, Azure, local Ollama, etc.).
 
 **Why OpenRouter?** Single API key for access to Claude, GPT-4o, Gemini, Llama, and others. Teams can experiment with different models per suite without managing multiple provider credentials. For production, the base URL can be pointed directly at any provider's API.
 
@@ -638,25 +638,25 @@ flowchart TD
 
 ### Component Responsibilities
 
-1. **CLI** — Entry point. Parses arguments, loads project config (`greenlight.yaml`) and suite config, invokes the runner, outputs results. Supports `--deployment` to select named deployment configurations.
-2. **Config Loader** (`config.ts`) — Loads and validates `greenlight.yaml`. Resolves deployment selection (CLI flag → single deployment → default_deployment). Merges deployment fields over top-level config.
-3. **YAML Parser** — Reads and validates suite definitions against Zod schemas. Resolves variables, environment references, and reusable step expansions.
-4. **Test Runner** — Orchestrates execution. Creates Playwright Browser Contexts for parallelism, assigns one Pilot instance per test case, collects results, handles setup/teardown.
-5. **The Pilot** — The core loop per test case:
+1. **CLI**: Entry point. Parses arguments, loads project config (`greenlight.yaml`) and suite config, invokes the runner, outputs results. Supports `--deployment` to select named deployment configurations.
+2. **Config Loader** (`config.ts`): Loads and validates `greenlight.yaml`. Resolves deployment selection (CLI flag → single deployment → default_deployment). Merges deployment fields over top-level config.
+3. **YAML Parser**: Reads and validates suite definitions against Zod schemas. Resolves variables, environment references, and reusable step expansions.
+4. **Test Runner**: Orchestrates execution. Creates Playwright Browser Contexts for parallelism, assigns one Pilot instance per test case, collects results, handles setup/teardown.
+5. **The Pilot**: The core loop per test case:
    - **Planning phase**: Sends all steps to the LLM in one request. The LLM pre-resolves steps that don't need page state (assertions, navigation, key presses) and marks page-dependent steps for runtime resolution.
    - **Execution phase**: Iterates planned steps. Pre-resolved actions execute directly. Page-dependent steps go through: capture a11y snapshot → send to LLM → execute returned action.
    - Captures post-action screenshots for reporting.
    - Fails fast on first step failure.
-6. **Page State Capture** (`state.ts`) — Playwright wrapper that produces:
+6. **Page State Capture** (`state.ts`): Playwright wrapper that produces:
    - Accessibility tree snapshot via `page.locator("body").ariaSnapshot()`, parsed into a tree with element refs assigned to interactive nodes.
-   - Optional viewport screenshot (PNG, base64-encoded) — skipped on pre-action captures to avoid triggering lazy-loaded elements.
+   - Optional viewport screenshot (PNG, base64-encoded), skipped on pre-action captures to avoid triggering lazy-loaded elements.
    - Browser console logs collected via an attached drain.
-7. **LLM Client** (`llm.ts`) — Sends prompts to an OpenAI-compatible chat completions endpoint (OpenRouter by default). Two modes:
-   - `planSteps()` — sends all steps with a planning system prompt, returns pre-resolved actions or PAGE markers.
-   - `resolveStep()` — sends a single step with page state for runtime resolution. Maintains conversation history within a test case for context. Caches results for identical step+URL combinations.
-8. **Action Executor** (`executor.ts`) — Translates structured actions into Playwright calls. Resolves element refs using multi-strategy locator resolution (hierarchy chain → role+name → label → placeholder → loose match). Supports `text` field fallback for elements not in the a11y tree. Handles navigation detection and waits for `domcontentloaded` on page transitions. Evaluates assertions directly via polling (positive assertions) or immediate check (negative assertions).
-9. **Trace Logger** (`trace.ts`) — Optional performance instrumentation enabled with `--trace`. Logs timestamped browser events (navigation, requests, responses, console errors) and Pilot events (capture, LLM, execute timings). Filters noise from media files and tracking domains.
-10. **Reporter** — Collects step results, screenshots, timing data, and error details. Generates output in CLI, JSON, or HTML format.
+7. **LLM Client** (`llm.ts`): Sends prompts to an OpenAI-compatible chat completions endpoint (OpenRouter by default). Two modes:
+   - `planSteps()`: Sends all steps with a planning system prompt, returns pre-resolved actions or PAGE markers.
+   - `resolveStep()`: Sends a single step with page state for runtime resolution. Maintains conversation history within a test case for context. Caches results for identical step+URL combinations.
+8. **Action Executor** (`executor.ts`): Translates structured actions into Playwright calls. Resolves element refs using multi-strategy locator resolution (hierarchy chain → role+name → label → placeholder → loose match). Supports `text` field fallback for elements not in the a11y tree. Handles navigation detection and waits for `domcontentloaded` on page transitions. Evaluates assertions directly via polling (positive assertions) or immediate check (negative assertions).
+9. **Trace Logger** (`trace.ts`): Optional performance instrumentation enabled with `--trace`. Logs timestamped browser events (navigation, requests, responses, console errors) and Pilot events (capture, LLM, execute timings). Filters noise from media files and tracking domains.
+10. **Reporter**: Collects step results, screenshots, timing data, and error details. Generates output in CLI, JSON, or HTML format.
 
 ---
 
@@ -679,5 +679,5 @@ flowchart TD
 | **Heuristic Test Plan** | A concrete, element-bound sequence of actions derived from a discovery run. Replaces natural-language steps with deterministic Playwright selectors and assertions. Stored in `.greenlight/plans/`. |
 | **Plan Drift** | When a cached heuristic plan no longer matches the actual application state (e.g., an element was renamed or removed), causing fast run steps to fail. |
 | **Source Hash** | A SHA-256 hash of a test case's effective definition (after variable and reusable step expansion) used to detect when a cached plan needs re-generation. |
-| **Browser Context** | A Playwright isolation primitive — an independent browser session (cookies, storage, cache) within a single Chromium process. Used for lightweight parallel test execution. |
+| **Browser Context** | A Playwright isolation primitive, an independent browser session (cookies, storage, cache) within a single Chromium process. Used for lightweight parallel test execution. |
 | **MCP (Model Context Protocol)** | A protocol for AI tool interoperability. GreenLight adopts MCP's architectural patterns (structured snapshots, element refs) internally but does not use MCP as a runtime transport. |

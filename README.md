@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/greenlight_banner.png" alt="GreenLight — AI-driven E2E Testing" width="500">
+  <img src="assets/greenlight_banner.png" alt="GreenLight: AI-driven E2E Testing" width="500">
 </p>
 
 # GreenLight
@@ -13,7 +13,7 @@ No selectors. No XPaths. No test IDs, drivers or glue code. Just describe what a
 > [!WARNING]
 > GreenLight is very new and not battle tested yet. YMMV.
 
-**[How it works](#how-it-works)** | **[Quick start](#quick-start)** | **[Project configuration](#project-configuration)** | **[CLI](#cli)** | **[Test syntax](#test-syntax)** | **[Writing test steps](#writing-test-steps)** | **[Cached plans](#cached-plans)** | **[LLM setup](#llm-setup)** | **[Architecture](#architecture)** | **[Avoiding side effects](#avoiding-side-effects-in-your-app)** | **[CI/CD](#cicd)**
+**[How it works](#how-it-works)** | **[Quick start](#quick-start)** | **[Project configuration](#project-configuration)** | **[CLI](#cli)** | **[Test syntax](#test-syntax)** | **[Writing test steps](#writing-test-steps)** | **[Cached plans](#cached-plans)** | **[LLM setup](#llm-setup)** | **[Architecture](#architecture)** | **[Avoiding side effects](#avoiding-side-effects-in-your-app)** | **[CI/CD](#cicd)** | **[Contributing](#contributing)**
 
 ---
 
@@ -39,7 +39,7 @@ tests:
 GreenLight understands form wizards, custom dropdowns, autocomplete fields, checkbox consent flows, complex date pickers and interactive maps. It fills in forms with realistic test data, handles before/after value comparisons, and works with any UI framework.
 
 The first run uses the LLM Pilot to discover the right actions (the **pilot** run). 
-After that, GreenLight caches a concrete action plan and replays it without LLM calls — making subsequent runs fast and deterministic.
+After that, GreenLight caches a concrete action plan and replays it without LLM calls, making subsequent runs fast and deterministic.
 
 ## Quick start
 
@@ -165,20 +165,20 @@ greenlight run --on-drift rerun         # re-run with pilot on cached plan drift
 
 ## GreenLight philosophy compared to Gherkin/Cucumber
 
-Traditional BDD tools like Cucumber use **Gherkin** — a structured `Given/When/Then` syntax where every step requires a developer-written **step definition** (glue code) that maps the English phrase to actual browser automation with CSS selectors or XPaths.
+Traditional BDD tools like Cucumber use **Gherkin**, a structured `Given/When/Then` syntax where every step requires a developer-written **step definition** (glue code) that maps the English phrase to actual browser automation with CSS selectors or XPaths.
 
 GreenLight takes a different approach:
 
 | | GreenLight | Gherkin (Cucumber) |
 |---|---|---|
 | **Test language** | Freeform plain English | Structured `Given/When/Then` keywords |
-| **Element targeting** | AI resolves via accessibility tree — no selectors | Developers write glue code with selectors/XPaths |
+| **Element targeting** | AI resolves via accessibility tree, no selectors | Developers write glue code with selectors/XPaths |
 | **Maintenance** | Tests survive UI refactors that don't change behavior | Selector changes break tests, requiring glue code updates |
 | **Authoring** | Non-technical testers, no code required | Readable specs, but developers must write step definitions |
-| **Determinism** | Cached plans are deterministic; discovery runs have LLM variability | Fully deterministic — same input, same execution path |
+| **Determinism** | Cached plans are deterministic; discovery runs have LLM variability | Fully deterministic, same input, same execution path |
 | **Maturity** | New, LLM-dependent | Battle-tested (15+ years), broad ecosystem |
 
-**In short:** Gherkin requires developers to bridge English and browser automation via step definitions. GreenLight uses AI as that bridge — eliminating the glue code layer at the cost of introducing LLM-dependent variability.
+**In short:** Gherkin requires developers to bridge English and browser automation via step definitions. GreenLight uses AI as that bridge, eliminating the glue code layer at the cost of introducing LLM-dependent variability.
 
 ## Test syntax
 
@@ -217,9 +217,9 @@ This section covers how GreenLight interprets your plain-English steps, what hap
 
 When you write a step like `click the "Add to Cart" button`, GreenLight's **planner** (an LLM) converts it into a structured action before any browser interaction happens. Understanding this pipeline helps you write clearer steps:
 
-1. **Planning** — the LLM reads all your steps and classifies each one into an action type
-2. **Execution** — the pilot executes each action against the live browser page
-3. **Caching** — successful runs are saved so future runs skip the LLM entirely
+1. **Planning:** The LLM reads all your steps and classifies each one into an action type
+2. **Execution:** The pilot executes each action against the live browser page
+3. **Caching:** Successful runs are saved so future runs skip the LLM entirely
 
 ### Navigation
 
@@ -232,7 +232,7 @@ steps:
   - navigate to About from the main menu     # click a link (uses the live page)
 ```
 
-**Tip:** Use quoted paths starting with `/` or `http` for direct navigation. For anything that requires finding and clicking a link, describe it naturally — GreenLight will resolve it against the live page.
+**Tip:** Use quoted paths starting with `/` or `http` for direct navigation. For anything that requires finding and clicking a link, describe it naturally. GreenLight will resolve it against the live page.
 
 ### Clicking and interacting
 
@@ -282,7 +282,7 @@ steps:
   - clear the category selection             # dropdown: finds the reset/clear button
 ```
 
-GreenLight automatically detects the element type and applies the right clearing strategy. For text inputs, it selects all and deletes. For filter chips, dropdowns, and multi-select tag inputs, it finds and clicks the nearest clear/remove/reset button — looking inside the element and at sibling elements for buttons matching common clear patterns (including localized labels like "Rensa").
+GreenLight automatically detects the element type and applies the right clearing strategy. For text inputs, it selects all and deletes. For filter chips, dropdowns, and multi-select tag inputs, it finds and clicks the nearest clear/remove/reset button, looking inside the element and at sibling elements for buttons matching common clear patterns (including localized labels like "Rensa").
 
 ### Typing and form fields
 
@@ -301,7 +301,7 @@ steps:
   - select "Canada" from "Country"           # works with native <select> and custom dropdowns
 ```
 
-A single `select` step handles both opening the dropdown and choosing the option — don't split it into two steps.
+A single `select` step handles both opening the dropdown and choosing the option. Don't split it into two steps.
 
 ### Autocomplete fields
 
@@ -321,7 +321,7 @@ steps:
   - uncheck the "Newsletter" checkbox
 ```
 
-Use `check`/`uncheck` instead of `click` for checkboxes — this ensures correct toggle behavior for both native and custom checkbox implementations.
+Use `check`/`uncheck` instead of `click` for checkboxes. This ensures correct toggle behavior for both native and custom checkbox implementations.
 
 ### Form filling
 
@@ -344,11 +344,11 @@ steps:
   - Select Red - Green - Blue in the color picker   # three sequential clicks
 ```
 
-Each value becomes a separate click action. Use this for tabs, radio cards, multi-select UIs — anything where you're clicking multiple items in sequence.
+Each value becomes a separate click action. Use this for tabs, radio cards, multi-select UIs, anything where you're clicking multiple items in sequence.
 
 ### Assertions
 
-Any step starting with "check that" or "verify" is treated as an assertion — it validates page state without interacting:
+Any step starting with "check that" or "verify" is treated as an assertion. It validates page state without interacting:
 
 ```yaml
 steps:
@@ -372,7 +372,7 @@ steps:
   - verify there are at least 5 results
 ```
 
-**Important:** Assertions with quoted text (like `"Order Confirmed"`) are resolved at plan time — no LLM call needed at runtime. Assertions without quotes (like `check that the form is present`) require the live page to resolve.
+**Important:** Assertions with quoted text (like `"Order Confirmed"`) are resolved at plan time, no LLM call needed at runtime. Assertions without quotes (like `check that the form is present`) require the live page to resolve.
 
 ### Random test data
 
@@ -385,11 +385,11 @@ steps:
   - fill the "Description" field with some test data
 ```
 
-For full forms with multiple fields, use the form filling syntax (`fill in the form with some test data`) — GreenLight inspects each field's label, type, and placeholder to generate appropriate data. The literal word "***random***" will trigger actual random data generation which is different for every run, even if the run is cached.
+For full forms with multiple fields, use the form filling syntax (`fill in the form with some test data`). GreenLight inspects each field's label, type, and placeholder to generate appropriate data. The literal word "***random***" will trigger actual random data generation which is different for every run, even if the run is cached.
 
 ### Date and time pickers
 
-GreenLight has built-in support for date/time pickers — including native HTML5 inputs and component-library widgets like MUI DateTimePicker with sectioned spinbuttons. No special syntax is needed; just describe what time to set using natural language:
+GreenLight has built-in support for date/time pickers, including native HTML5 inputs and component-library widgets like MUI DateTimePicker with sectioned spinbuttons. No special syntax is needed; just describe what time to set using natural language:
 
 ```yaml
 steps:
@@ -403,15 +403,15 @@ steps:
 **How it works:**
 
 1. The planner identifies date/time steps and extracts the time expression (e.g., "10 minutes from now")
-2. [chrono-node](https://github.com/wanasit/chrono) parses the expression into an exact timestamp — no LLM needed for time math
+2. [chrono-node](https://github.com/wanasit/chrono) parses the expression into an exact timestamp, no LLM needed for time math
 3. GreenLight inspects the page's accessibility tree to find the picker elements
 4. Values are filled into the correct fields automatically
 
 **Supported picker types:**
 
-- **Native HTML5** (`<input type="date">`, `datetime-local`, `time`) — filled with `YYYY-MM-DD`, `YYYY-MM-DDTHH:mm`, or `HH:mm`
-- **Sectioned pickers** (MUI v7, etc.) — individual spinbutton sections (Day, Month, Year, Hours, Minutes) are each filled with the correct value
-- **Multiple pickers on one page** — GreenLight matches "start" / "end" in the step text against picker group names to target the right one
+- **Native HTML5** (`<input type="date">`, `datetime-local`, `time`): Filled with `YYYY-MM-DD`, `YYYY-MM-DDTHH:mm`, or `HH:mm`
+- **Sectioned pickers** (MUI v7, etc.): Individual spinbutton sections (Day, Month, Year, Hours, Minutes) are each filled with the correct value
+- **Multiple pickers on one page**: GreenLight matches "start" / "end" in the step text against picker group names to target the right one
 
 **Supported time expressions:**
 
@@ -425,7 +425,7 @@ steps:
 | `2026-06-15` | Explicit date |
 | `2026-06-15 14:30` | Explicit date and time |
 
-Date picker steps are always computed fresh — even on cached plan replay, the timestamp is recalculated from the current time. This means tests with relative times like "10 minutes from now" never fail due to stale cached dates.
+Date picker steps are always computed fresh. Even on cached plan replay, the timestamp is recalculated from the current time. This means tests with relative times like "10 minutes from now" never fail due to stale cached dates.
 
 ### Counting elements
 
@@ -448,7 +448,7 @@ steps:
   - count the number of rows in the results table
 ```
 
-**How it works:** GreenLight inspects the live page's accessibility tree to identify all elements matching the description. The LLM determines a common denominator (role, text pattern, or accessible name) that uniquely identifies the target elements, then counts all matches using exact text matching to avoid false positives from headings or breadcrumbs. The count is stored as a number in the value store — the same mechanism used by `remember` — so it works seamlessly with `check that ... has decreased/increased` comparisons.
+**How it works:** GreenLight inspects the live page's accessibility tree to identify all elements matching the description. The LLM determines a common denominator (role, text pattern, or accessible name) that uniquely identifies the target elements, then counts all matches using exact text matching to avoid false positives from headings or breadcrumbs. The count is stored as a number in the value store, the same mechanism used by `remember`, so it works seamlessly with `check that ... has decreased/increased` comparisons.
 
 When a step checks that the number of visible elements equals a remembered value, GreenLight automatically splits it into a count + compare: first count the elements, then compare the count against the stored variable.
 
@@ -479,7 +479,7 @@ This flow generates a random value, captures it, performs an action, and then ve
 
 ### Conditional steps
 
-Conditional steps let you handle pages that may look different between runs — cookie banners, feature flags, A/B tests, or optional UI elements.
+Conditional steps let you handle pages that may look different between runs: cookie banners, feature flags, A/B tests, or optional UI elements.
 
 #### Inline conditionals
 
@@ -509,7 +509,7 @@ steps:
   - search for "headphones"
 ```
 
-The `else` block is optional. Block conditionals are flattened to inline conditionals at load time — the planner and pilot handle them the same way.
+The `else` block is optional. Block conditionals are flattened to inline conditionals at load time. The planner and pilot handle them the same way.
 
 #### Supported conditions
 
@@ -521,7 +521,7 @@ If the condition is false and there's no `else`, the step is simply skipped (not
 
 ### Map testing
 
-GreenLight has built-in support for testing interactive WebGL maps. When a step mentions maps, markers, layers, or zoom levels, GreenLight detects the map library, attaches to its instance, and queries rendered features directly — bypassing the DOM (WebGL canvas content is invisible to the accessibility tree).
+GreenLight has built-in support for testing interactive WebGL maps. When a step mentions maps, markers, layers, or zoom levels, GreenLight detects the map library, attaches to its instance, and queries rendered features directly, bypassing the DOM (WebGL canvas content is invisible to the accessibility tree).
 
 ```yaml
 steps:
@@ -531,16 +531,16 @@ steps:
   - check that the "hospitals" layer is visible on the map
 ```
 
-Currently supported: **MapLibre GL JS**. The architecture is pluggable — Mapbox GL and Leaflet adapters can be added.
+Currently supported: **MapLibre GL JS**. The architecture is pluggable. Mapbox GL and Leaflet adapters can be added.
 
-**How it works:** When a step mentions map-related content, GreenLight automatically inserts a map detection step. Map assertions query the actual rendered vector tile features (place names, road labels, etc.) and viewport state (center, zoom, bounds, layers) — not the DOM.
+**How it works:** When a step mentions map-related content, GreenLight automatically inserts a map detection step. Map assertions query the actual rendered vector tile features (place names, road labels, etc.) and viewport state (center, zoom, bounds, layers), not the DOM.
 
 **Map instance detection** works automatically for most setups:
 
-1. **React apps** (react-map-gl, etc.) — walks the React fiber tree
-2. **Vue apps** — checks `__vue_app__` / `__vue__` component trees
-3. **Global variables** — scans `window.map`, `window.mapInstance`, etc.
-4. **Explicit exposure** — set `window.__greenlight_map = map` for maximum reliability
+1. **React apps** (react-map-gl, etc.): Walks the React fiber tree
+2. **Vue apps**: Checks `__vue_app__` / `__vue__` component trees
+3. **Global variables**: Scans `window.map`, `window.mapInstance`, etc.
+4. **Explicit exposure**: Set `window.__greenlight_map = map` for maximum reliability
 
 ### Reusable steps
 
@@ -563,25 +563,25 @@ tests:
 
 ### Tips for reliable tests
 
-- **Be specific with quotes** — `click "Submit"` is more reliable than `click the submit button` because it matches exact text.
-- **One action per step** — each step should describe one thing a user does. GreenLight splits compound steps, but explicit single-action steps are more predictable.
-- **Use assertions liberally** — after key actions, add a `check that` step to verify the expected outcome. This catches failures early and makes the test report more readable.
-- **Don't over-specify DOM structure** — say `click "Add to Cart"` not `click the button inside the product card div`. GreenLight uses the accessibility tree, not CSS selectors.
-- **Conditional steps for flaky UI** — if a cookie banner or popup sometimes appears, use `click "Accept" if visible` instead of making it a required step.
+- **Be specific with quotes.** `click "Submit"` is more reliable than `click the submit button` because it matches exact text.
+- **One action per step.** Each step should describe one thing a user does. GreenLight splits compound steps, but explicit single-action steps are more predictable.
+- **Use assertions liberally.** After key actions, add a `check that` step to verify the expected outcome. This catches failures early and makes the test report more readable.
+- **Don't over-specify DOM structure.** Say `click "Add to Cart"` not `click the button inside the product card div`. GreenLight uses the accessibility tree, not CSS selectors.
+- **Conditional steps for flaky UI.** If a cookie banner or popup sometimes appears, use `click "Accept" if visible` instead of making it a required step.
 
 ### Robustness features
 
 GreenLight includes several built-in mechanisms to handle real-world complexity:
 
-- **Planner model escalation** — when the fast pilot model fails to resolve a step, GreenLight automatically retries with the more capable planner model before giving up. This catches cases where the cheaper model can't make a tricky element mapping.
-- **Context length recovery** — if the LLM's context window is exceeded (common on pages with large DOM trees), GreenLight clears conversation history and retries with a fresh context instead of aborting the test run.
-- **Large page handling** — pages with many repeated elements (e.g. a list of many product cards with lots of detail) get an automatically compressed accessibility tree: the first few items are shown in full, and the rest are summarized as one-liners. This keeps the input within token limits while preserving all element names for targeting.
+- **Planner model escalation.** When the fast pilot model fails to resolve a step, GreenLight automatically retries with the more capable planner model before giving up. This catches cases where the cheaper model can't make a tricky element mapping.
+- **Context length recovery.** If the LLM's context window is exceeded (common on pages with large DOM trees), GreenLight clears conversation history and retries with a fresh context instead of aborting the test run.
+- **Large page handling.** Pages with many repeated elements (e.g. a list of many product cards with lots of detail) get an automatically compressed accessibility tree: the first few items are shown in full, and the rest are summarized as one-liners. This keeps the input within token limits while preserving all element names for targeting.
 
 ## Cached plans
 
 The first run of a test uses LLM calls to discover the right browser actions (**discovery run**). After a successful run, GreenLight caches the concrete action sequence as a **heuristic plan** in `.greenlight/plans/`.
 
-Subsequent runs replay the cached plan directly via Playwright — no LLM calls, no API costs, significantly faster. If you change the test steps in YAML, the hash changes and GreenLight automatically re-discovers.
+Subsequent runs replay the cached plan directly via Playwright, no LLM calls, no API costs, significantly faster. If you change the test steps in YAML, the hash changes and GreenLight automatically re-discovers.
 
 ```bash
 greenlight run                    # uses cached plans where available
@@ -622,14 +622,14 @@ provider: openai
 greenlight run --provider gemini
 ```
 
-Only one provider is active at a time. OpenRouter is the default — it lets you access models from all vendors through a single API key, which is the easiest way to get started.
+Only one provider is active at a time. OpenRouter is the default. It lets you access models from all vendors through a single API key, which is the easiest way to get started.
 
 ### Model selection
 
 GreenLight uses the LLM in two distinct roles with different requirements:
 
-- **Planner** — interprets the test steps, splits compound actions, and expands form-filling steps. This runs once per test case and benefits from a more capable model for consistent, correct results.
-- **Pilot** — resolves individual steps against the live page (picking which element to click/type). This runs many times per test and should use a fast, inexpensive model to keep costs and execution time low.
+- **Planner**: Interprets the test steps, splits compound actions, and expands form-filling steps. This runs once per test case and benefits from a more capable model for consistent, correct results.
+- **Pilot**: Resolves individual steps against the live page (picking which element to click/type). This runs many times per test and should use a fast, inexpensive model to keep costs and execution time low.
 
 Configure both in `greenlight.yaml`:
 
@@ -726,14 +726,14 @@ flowchart TD
     orchestrator --> output
 ```
 
-**Discovery run:** capture page state (a11y tree with stable refs) → LLM determines action → execute via Playwright → record for cache.
+**Discovery run:** Capture page state (a11y tree with stable refs) → LLM determines action → execute via Playwright → record for cache.
 
-**Cached run:** replay stored actions directly via Playwright — no LLM calls, no API costs.
+**Cached run:** Replay stored actions directly via Playwright, no LLM calls, no API costs.
 
 ## Documentation
 
-- [Specifications](docs/specifications.md) — full feature spec, technology decisions, MCP strategy
-- [Implementation Plan](docs/implementation.md) — step-by-step build plan
+- [Specifications](docs/specifications.md): Full feature spec, technology decisions, MCP strategy
+- [Implementation Plan](docs/implementation.md): Step-by-step build plan
 
 ## Avoiding side effects in your app
 
@@ -770,7 +770,7 @@ if (!req.isE2ETest) {
 }
 ```
 
-The header is only added to same-origin requests — cross-origin requests to CDNs, tile servers, and third-party APIs are not affected. This avoids triggering CORS preflight requests on external services.
+The header is only added to same-origin requests. Cross-origin requests to CDNs, tile servers, and third-party APIs are not affected. This avoids triggering CORS preflight requests on external services.
 
 ## CI/CD
 
@@ -782,3 +782,13 @@ The header is only added to same-origin requests — cross-origin requests to CD
 ```
 
 Exit code 0 on all-pass, non-zero on any failure.
+
+## Contributing
+
+GreenLight is an internal project at [Umain AB](https://umain.com) and is still in alpha. Things move fast and APIs may change. That said, we'd love contributions from anyone who finds the project useful or interesting.
+
+**Pull requests are welcome.** Whether it's a bug fix, a new feature, improved docs, or a wild idea: Open a PR and we'll take a look. We don't have a formal contributing guide yet, so just keep your changes focused and include a short description of what you changed and why.
+
+**A note on issues:** We've disabled the issue tracker for now. If you run into a problem or have an idea, the best way forward is to submit a PR. We're a small team and would rather review code than triage tickets at this stage.
+
+Thanks for checking out GreenLight. We're excited to see where it goes.

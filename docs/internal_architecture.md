@@ -18,7 +18,7 @@ Playwright's `page.locator("body").ariaSnapshot()` produces a raw YAML-like tree
 
 1. Each element gets a **structural path**: `{role}:{name}[siblingIndex]` at each tree level
 2. A persistent `stableRefMap` (Map<structuralPath, ref>) assigns refs like `e1`, `e2`, `e3`
-3. If the path already exists in the map, the same ref is reused — stability across captures
+3. If the path already exists in the map, the same ref is reused, providing stability across captures
 4. Only interactive roles get refs (button, link, textbox, checkbox, combobox, etc.)
 5. Non-interactive elements get placeholders like `_role`
 6. The map persists within a test case (reset between tests via `resetRefCounter()`)
@@ -27,9 +27,9 @@ Playwright's `page.locator("body").ariaSnapshot()` produces a raw YAML-like tree
 
 After parsing, `enrichA11yNodes()` runs a single `page.evaluate()` to extract:
 
-- `visibleText` — the `innerText` for buttons, headings, links
-- `placeholder` — for input fields
-- `value` — current input value or selected option text
+- `visibleText`: The `innerText` for buttons, headings, links
+- `placeholder`: For input fields
+- `value`: Current input value or selected option text
 
 Accessible names are computed with a fallback chain: `aria-label` → `aria-labelledby` → `<label>` text → `placeholder` → `alt` → `innerText` → `title`.
 
@@ -47,7 +47,7 @@ Accessible names are computed with a fallback chain: `aria-label` → `aria-labe
 
 ### Ref resolution back to Playwright
 
-When the LLM says "click e1", `resolveLocator()` in `src/pilot/locator.ts` converts the ref back to a Playwright locator using chained role matching, label matching, placeholder matching, or text matching — scoped by the tree hierarchy.
+When the LLM says "click e1", `resolveLocator()` in `src/pilot/locator.ts` converts the ref back to a Playwright locator using chained role matching, label matching, placeholder matching, or text matching, scoped by the tree hierarchy.
 
 ### Key design property
 
@@ -122,20 +122,20 @@ Step N+1 starts
 
 ### Fast path
 
-Tracks `lastContent` (body textContent from the previous idle check). If no requests are pending and content matches, returns immediately — zero overhead. This handles the common case of consecutive steps on a stable page.
+Tracks `lastContent` (body textContent from the previous idle check). If no requests are pending and content matches, returns immediately. Zero overhead. This handles the common case of consecutive steps on a stable page.
 
 ### Phase 1: Network idle
 
-Tracks in-flight requests via Playwright's `request`/`requestfinished`/`requestfailed` events. Waits for the pending set to be empty for 100ms (grace period for chained requests). Capped at 1s — anything still in-flight after that is likely a slow prefetch or background request.
+Tracks in-flight requests via Playwright's `request`/`requestfinished`/`requestfailed` events. Waits for the pending set to be empty for 100ms (grace period for chained requests). Capped at 1s. Anything still in-flight after that is likely a slow prefetch or background request.
 
-**Background request filtering** — these are excluded from the pending set entirely:
+**Background request filtering**: These are excluded from the pending set entirely:
 - `prefetch` and `ping` resource types
 - Analytics: googletagmanager.com, googlesyndication.com, google-analytics.com, cookiebot.com
 - Media streaming (HLS manifests, video chunks)
 
 ### Phase 2: DOM content stability
 
-Polls `body.textContent()` every 100ms. Waits for 300ms of no change. Capped at 1.5s — if content is still changing after that, it's live content (animations, streaming) that shouldn't block step execution.
+Polls `body.textContent()` every 100ms. Waits for 300ms of no change. Capped at 1.5s. If content is still changing after that, it's live content (animations, streaming) that shouldn't block step execution.
 
 Uses `textContent` (not `innerText`) because some frameworks render content that CSS hides from `innerText` during transitions.
 
@@ -148,12 +148,12 @@ After click/navigate actions, `lastContent` is cleared so the fast path can't sh
 **Pilot:**
 - Pre-step: `waitForNetworkIdle` → `capturePageState` → LLM → execute
 - Post-step: `waitForLoadState("domcontentloaded")` + URL wait for navigation + invalidate cache
-- No redundant `waitForNetworkIdle` after execution — the next step's pre-step idle handles it
+- No redundant `waitForNetworkIdle` after execution. The next step's pre-step idle handles it
 
 **Cached runner:**
 - Pre-step: `waitForNetworkIdle` only
 - Post-step: URL wait using plan's expected fingerprint + invalidate cache
-- No post-step `waitForNetworkIdle` — eliminated as redundant with the next step's pre-step idle
+- No post-step `waitForNetworkIdle`, eliminated as redundant with the next step's pre-step idle
 
 ### Performance measurement
 
@@ -163,10 +163,10 @@ The `--perf` flag shows per-step timing breakdown:
 ✓ click "Submit" (850ms) [net:310 dom:420 exec:120ms]
 ```
 
-- `net` — Phase 1 duration (network idle wait)
-- `dom` — Phase 2 duration (content stability wait)
-- `exec` — action execution time
-- `capture` / `llm` / `post` / `settle` — pilot-only phases
+- `net`: Phase 1 duration (network idle wait)
+- `dom`: Phase 2 duration (content stability wait)
+- `exec`: Action execution time
+- `capture` / `llm` / `post` / `settle`: Pilot-only phases
 
 Zero-value phases are omitted.
 
@@ -202,7 +202,7 @@ Once found, the instance is stored as `window.__greenlight_map_instance`.
 Map assertions in `src/pilot/assertions.ts` support:
 
 - **Feature search**: `queryRenderedFeatures()` queries all visible vector tile features, matching by name property
-- **Zoom checks**: numeric comparison against `map.getZoom()`
-- **Layer checks**: presence check against `map.getStyle().layers`
+- **Zoom checks**: Numeric comparison against `map.getZoom()`
+- **Layer checks**: Presence check against `map.getStyle().layers`
 
 Both pilot and cached runner capture map state before assertion steps when a map adapter is active.
