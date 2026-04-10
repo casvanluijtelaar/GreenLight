@@ -70,6 +70,7 @@ export function createClaudeCodeProvider(): LLMProvider {
 				{
 					encoding: "utf8",
 					maxBuffer: 10 * 1024 * 1024,
+					timeout: 120_000,
 				},
 			)
 
