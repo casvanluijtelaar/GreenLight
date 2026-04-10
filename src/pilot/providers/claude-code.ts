@@ -50,7 +50,7 @@ function serializeMessages(messages: ChatMessage[]): string {
 
 /**
  * Provider that delegates to the local `claude` CLI subprocess.
- * Requires Claude Code to be installed and authenticated — no API key needed.
+ * Requires Claude Code to be installed and authenticated. No API key needed.
  */
 export function createClaudeCodeProvider(): LLMProvider {
 	return {
