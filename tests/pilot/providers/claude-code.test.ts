@@ -54,7 +54,7 @@ describe("createClaudeCodeProvider", () => {
 			stderr: "",
 			status: 0,
 			error: undefined,
-		} as ReturnType<typeof spawnSync>)
+		} as unknown as ReturnType<typeof spawnSync>)
 
 		const provider = createClaudeCodeProvider()
 		await provider.chatCompletion(messages, { apiKey: "", model: "claude-sonnet-4-5" })
@@ -72,7 +72,7 @@ describe("createClaudeCodeProvider", () => {
 			stderr: "",
 			status: 0,
 			error: undefined,
-		} as ReturnType<typeof spawnSync>)
+		} as unknown as ReturnType<typeof spawnSync>)
 
 		const provider = createClaudeCodeProvider()
 		await provider.chatCompletion(messages, { apiKey: "", model: "anthropic/claude-sonnet-4" })
@@ -90,7 +90,7 @@ describe("createClaudeCodeProvider", () => {
 			stderr: "",
 			status: 0,
 			error: undefined,
-		} as ReturnType<typeof spawnSync>)
+		} as unknown as ReturnType<typeof spawnSync>)
 
 		const provider = createClaudeCodeProvider()
 		const result = await provider.chatCompletion(messages, { apiKey: "", model: "claude-sonnet-4-5" })
@@ -104,7 +104,7 @@ describe("createClaudeCodeProvider", () => {
 			stderr: "",
 			status: 0,
 			error: undefined,
-		} as ReturnType<typeof spawnSync>)
+		} as unknown as ReturnType<typeof spawnSync>)
 
 		const provider = createClaudeCodeProvider()
 		await provider.chatCompletion(messagesWithHistory, { apiKey: "", model: "claude-sonnet-4-5" })
@@ -125,7 +125,7 @@ describe("createClaudeCodeProvider", () => {
 			stderr: "",
 			status: null,
 			error: new Error("ENOENT"),
-		} as ReturnType<typeof spawnSync>)
+		} as unknown as ReturnType<typeof spawnSync>)
 
 		const provider = createClaudeCodeProvider()
 		await expect(
@@ -139,7 +139,7 @@ describe("createClaudeCodeProvider", () => {
 			stderr: "Authentication failed",
 			status: 1,
 			error: undefined,
-		} as ReturnType<typeof spawnSync>)
+		} as unknown as ReturnType<typeof spawnSync>)
 
 		const provider = createClaudeCodeProvider()
 		await expect(
@@ -153,7 +153,7 @@ describe("createClaudeCodeProvider", () => {
 			stderr: "",
 			status: 0,
 			error: undefined,
-		} as ReturnType<typeof spawnSync>)
+		} as unknown as ReturnType<typeof spawnSync>)
 
 		const provider = createClaudeCodeProvider()
 		await expect(
