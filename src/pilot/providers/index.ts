@@ -42,10 +42,11 @@ export function createProvider(
 				baseUrlOverride ?? "https://api.openai.com/v1",
 			)
 		case "claude":
-		case "claude-code":
 			return createAnthropicProvider(
 				baseUrlOverride ?? "https://api.anthropic.com",
 			)
+		case "claude-code":
+			throw new Error("claude-code provider not yet registered — coming in next task")
 		case "gemini":
 			return createGeminiProvider(baseUrlOverride)
 		default: {
