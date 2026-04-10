@@ -45,10 +45,6 @@ export function createProvider(
 			return createAnthropicProvider(
 				baseUrlOverride ?? "https://api.anthropic.com",
 			)
-		case "claude-code":
-			return createAnthropicProvider(
-				baseUrlOverride ?? "https://api.anthropic.com",
-			)
 		case "gemini":
 			return createGeminiProvider(baseUrlOverride)
 		default: {
