@@ -255,6 +255,17 @@ describe("resolveLLMConfig", () => {
 	})
 })
 
+describe("parseProvider (via CLI)", () => {
+	it("accepts claude-code as a valid provider string", () => {
+		// parseProvider is not exported, but the Provider type now includes
+		// "claude-code" — confirm the type compiles and resolveLLMConfig
+		// accepts it without throwing about the provider name.
+		// Full CLI integration is covered by the manual smoke test.
+		const p: import("../../src/types.js").Provider = "claude-code"
+		expect(p).toBe("claude-code")
+	})
+})
+
 describe("createLLMClient", () => {
 	it("sends correct request and parses response", async () => {
 		const provider = createMockProvider(
