@@ -42,6 +42,7 @@ export function createProvider(
 				baseUrlOverride ?? "https://api.openai.com/v1",
 			)
 		case "claude":
+		case "claude-code":
 			return createAnthropicProvider(
 				baseUrlOverride ?? "https://api.anthropic.com",
 			)
