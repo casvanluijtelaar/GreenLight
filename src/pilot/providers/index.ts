@@ -19,6 +19,7 @@ import type { LLMProvider } from "./types.js"
 import { createOpenAICompatibleProvider } from "./openai-compatible.js"
 import { createAnthropicProvider } from "./anthropic.js"
 import { createGeminiProvider } from "./gemini.js"
+import { createClaudeCodeProvider } from "./claude-code.js"
 
 export type { ChatMessage, ProviderConfig, LLMProvider } from "./types.js"
 export { LLMApiError } from "./types.js"
@@ -46,7 +47,7 @@ export function createProvider(
 				baseUrlOverride ?? "https://api.anthropic.com",
 			)
 		case "claude-code":
-			throw new Error("claude-code provider not yet registered — coming in next task")
+			return createClaudeCodeProvider()
 		case "gemini":
 			return createGeminiProvider(baseUrlOverride)
 		default: {
