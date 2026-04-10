@@ -101,7 +101,7 @@ export function resolveLLMConfig(runConfig: RunConfig): LLMClientConfig {
 	const modelConfig = resolveModelConfig(runConfig.model)
 	const provider = createProvider(runConfig.provider, runConfig.llmBaseUrl)
 	return {
-		apiKey: resolveApiKey(),
+		apiKey: runConfig.provider === "claude-code" ? "" : resolveApiKey(),
 		provider,
 		plannerModel: modelConfig.planner,
 		pilotModel: modelConfig.pilot,
