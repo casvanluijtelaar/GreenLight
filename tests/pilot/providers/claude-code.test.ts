@@ -66,24 +66,6 @@ describe("createClaudeCodeProvider", () => {
 		)
 	})
 
-	it("strips vendor prefix from model name", async () => {
-		mockSpawnSync.mockReturnValue({
-			stdout: 'click ref=e3',
-			stderr: "",
-			status: 0,
-			error: undefined,
-		} as unknown as ReturnType<typeof spawnSync>)
-
-		const provider = createClaudeCodeProvider()
-		await provider.chatCompletion(messages, { apiKey: "", model: "anthropic/claude-sonnet-4" })
-
-		expect(mockSpawnSync).toHaveBeenCalledWith(
-			"claude",
-			expect.arrayContaining(["--model", "claude-sonnet-4"]),
-			expect.anything(),
-		)
-	})
-
 	it("returns trimmed stdout on success", async () => {
 		mockSpawnSync.mockReturnValue({
 			stdout: '  click ref=e3\n',
@@ -98,7 +80,7 @@ describe("createClaudeCodeProvider", () => {
 		expect(result).toBe("click ref=e3")
 	})
 
-	it("includes system content and conversation turns in the prompt", async () => {
+	it("passes system message via -s and conversation turns via -p", async () => {
 		mockSpawnSync.mockReturnValue({
 			stdout: 'click ref=e5',
 			stderr: "",
@@ -111,9 +93,11 @@ describe("createClaudeCodeProvider", () => {
 
 		const call = mockSpawnSync.mock.calls[0]
 		const args = call[1] as string[]
-		const promptArg = args[args.indexOf("-p") + 1]
 
-		expect(promptArg).toContain("You are a browser automation AI.")
+		expect(args[args.indexOf("-s") + 1]).toBe("You are a browser automation AI.")
+
+		const promptArg = args[args.indexOf("-p") + 1]
+		expect(promptArg).not.toContain("You are a browser automation AI.")
 		expect(promptArg).toContain("Human: click the login button")
 		expect(promptArg).toContain("Assistant: click ref=e1")
 		expect(promptArg).toContain("Human: check the page title")

@@ -23,28 +23,17 @@ import {
 } from "./types.js"
 
 /**
- * Flatten a ChatMessage[] into a single prompt string for the claude CLI.
- * System messages are prepended as context; conversation turns follow
- * in Human/Assistant format.
+ * Serialize user/assistant turns into Human/Assistant format for the claude CLI.
  */
 function serializeMessages(messages: ChatMessage[]): string {
-	const system = messages.filter((m) => m.role === "system")
-	const conversation = messages.filter((m) => m.role !== "system")
-
 	const parts: string[] = []
-
-	if (system.length > 0) {
-		parts.push(system.map((m) => m.content).join("\n\n"))
-	}
-
-	for (const msg of conversation) {
+	for (const msg of messages) {
 		if (msg.role === "user") {
 			parts.push(`Human: ${msg.content}`)
 		} else if (msg.role === "assistant") {
 			parts.push(`Assistant: ${msg.content}`)
 		}
 	}
-
 	return parts.join("\n\n")
 }
 
@@ -58,15 +47,18 @@ export function createClaudeCodeProvider(): LLMProvider {
 			messages: ChatMessage[],
 			config: ProviderConfig,
 		): Promise<string> {
-			const prompt = serializeMessages(messages)
-			// Strip vendor prefix: "anthropic/claude-sonnet-4" → "claude-sonnet-4"
-			const cliModel = config.model.includes("/")
-				? (config.model.split("/").pop() ?? config.model)
-				: config.model
+			const systemMessage = messages.find((m) => m.role === "system")
+			const otherMessages = messages.filter((m) => m.role !== "system")
+			const prompt = serializeMessages(otherMessages)
 
 			const result = spawnSync(
 				"claude",
-				["--model", cliModel, "--output-format", "text", "-p", prompt],
+				[
+					"--model", config.model,
+					"--system-prompt", systemMessage?.content ?? "",
+					"--output-format", "text",
+					"-p", prompt,
+				],
 				{
 					encoding: "utf8",
 					maxBuffer: 10 * 1024 * 1024,
