@@ -23,21 +23,6 @@ import {
 } from "./types.js"
 
 /**
- * Serialize user/assistant turns into Human/Assistant format for the claude CLI.
- */
-function serializeMessages(messages: ChatMessage[]): string {
-	const parts: string[] = []
-	for (const msg of messages) {
-		if (msg.role === "user") {
-			parts.push(`Human: ${msg.content}`)
-		} else if (msg.role === "assistant") {
-			parts.push(`Assistant: ${msg.content}`)
-		}
-	}
-	return parts.join("\n\n")
-}
-
-/**
  * Provider that delegates to the local `claude` CLI subprocess.
  * Requires Claude Code to be installed and authenticated. No API key needed.
  */
@@ -48,16 +33,18 @@ export function createClaudeCodeProvider(): LLMProvider {
 			config: ProviderConfig,
 		): Promise<string> {
 			// Extract system message into separate field
-			const systemMessage = messages.find((m) => m.role === "system")
+			const systemMessages = messages.filter((m) => m.role === "system")
 			const nonSystemMessages = messages.filter((m) => m.role !== "system")
 
-			console.log(JSON.stringify(messages))
+			const systemText = systemMessages
+				.map((m) => m.content)
+				.join("\n\n")	
 
 			const result = spawnSync(
 				"claude",
 				[
 					"--model", config.model,
-					"--system-prompt", systemMessage?.content,
+					"--system-prompt", systemText,
 					"--output-format", "text",
 					"-p", JSON.stringify(nonSystemMessages),
 				],
@@ -82,6 +69,7 @@ export function createClaudeCodeProvider(): LLMProvider {
 			}
 
 			const content = result.stdout.trim()
+
 			if (!content) {
 				throw new Error("LLM returned empty response")
 			}
