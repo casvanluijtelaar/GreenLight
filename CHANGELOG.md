@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.2] - 2026-04-18
+
+File upload support.
+
+### Added
+
+- **Upload action:** New `upload` action attaches files to file inputs. Supports targeting by `testid`, `ref`, or visible text. Automatically finds hidden file inputs when a trigger button is targeted. Multiple files supported via comma-separated paths.
+- **Clipboard permissions:** Browser contexts now grant `clipboard-read` and `clipboard-write` by default, fixing failures on pages that use the clipboard API.
+
 ## [0.8.1] - 2026-04-18
 
 Improved LLM response parsing reliability.
