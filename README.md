@@ -36,7 +36,7 @@ tests:
       - check that you see "Thanks for your inquiry"
 ```
 
-GreenLight understands form wizards, custom dropdowns, autocomplete fields, checkbox consent flows, complex date pickers and interactive maps. It fills in forms with realistic test data, handles before/after value comparisons, and works with any UI framework.
+GreenLight understands form wizards, custom dropdowns, autocomplete fields, checkbox consent flows, complex date pickers, file uploads and interactive maps. It fills in forms with realistic test data, handles before/after value comparisons, and works with any UI framework.
 
 The first run uses the LLM Pilot to discover the right actions (the **pilot** run). 
 After that, GreenLight caches a concrete action plan and replays it without LLM calls, making subsequent runs fast and deterministic.
@@ -48,6 +48,13 @@ After that, GreenLight caches a concrete action plan and replays it without LLM 
 ```bash
 npm install @eidra-umain/greenlight
 ```
+
+GreenLight automatically installs the Chromium browser it needs via a `postinstall` script. You do not need to install Playwright separately or run `playwright install` yourself.
+
+> **pnpm users:** pnpm may block postinstall scripts by default. If Chromium is not installed after `pnpm install`, add this to your `.npmrc`:
+> ```
+> enable-pre-post-scripts=true
+> ```
 
 2. Create a `greenlight.yaml` in your project root:
 
@@ -774,6 +781,8 @@ if (!req.isE2ETest) {
 The header is only added to same-origin requests. Cross-origin requests to CDNs, tile servers, and third-party APIs are not affected. This avoids triggering CORS preflight requests on external services.
 
 ## CI/CD
+
+Chromium is installed automatically when you run `npm install` (via GreenLight's `postinstall` script), so no separate browser installation step is needed in CI.
 
 ```yaml
 - name: Run E2E tests

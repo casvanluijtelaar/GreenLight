@@ -8,7 +8,7 @@ Automatic Playwright browser installation on install.
 
 ### Fixed
 
-- **Playwright browser install:** GreenLight now runs `playwright install chromium` automatically as a postinstall step, so users no longer need to install Playwright as a direct dependency or manually invoke it from inside the package.
+- **Playwright browser install:** GreenLight now runs `playwright install chromium` automatically as a postinstall step, so users no longer need to install Playwright as a direct dependency or manually invoke it from inside the package. README documents this, including the pnpm `.npmrc` workaround.
 
 ## [0.8.2] - 2026-04-18
 
