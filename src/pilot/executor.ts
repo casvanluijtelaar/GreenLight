@@ -227,54 +227,29 @@ export async function executeAction(
 					? action.value.split(",").map((p) => p.trim())
 					: action.value
 
-				// Resolve the initial target — may be a visible trigger button
-				// rather than the file input itself (common UI pattern).
+				// Hidden file inputs never appear in the a11y tree, so we don't
+				// use resolveActionTarget here. Instead we have three explicit cases:
 				let fileInput: Locator
 				if (action.testid) {
-					// Direct testid targeting bypasses the a11y tree entirely,
-					// needed for hidden file inputs with a known data-testid.
+					// Precise targeting by data-testid — most reliable for hidden inputs.
 					fileInput = page.getByTestId(action.testid)
-				} else
-				try {
-					const locator = await resolveActionTarget(page, action, a11yTree, stepHint)
-					resolvedSelector = await extractSelectorInfo(
-						page,
-						action,
-						a11yTree,
-						locator,
-					)
-					const inputType = await locator
-						.evaluate((el) => (el as HTMLInputElement).type?.toLowerCase())
-						.catch(() => "")
-
-					if (inputType === "file") {
-						fileInput = locator
+				} else if (action.ref || action.text) {
+					// The LLM referenced a visible trigger button. Resolve it via the
+					// a11y tree, then search the parent container for a sibling file input.
+					const trigger = await resolveActionTarget(page, action, a11yTree, stepHint)
+					resolvedSelector = await extractSelectorInfo(page, action, a11yTree, trigger)
+					const nearbyInput = trigger.locator("..").locator("input[type='file']")
+					if (await nearbyInput.count() > 0) {
+						fileInput = nearbyInput.first()
 					} else {
-						// The LLM targeted the visible trigger button. Search the
-						// parent container for a sibling hidden file input first,
-						// then fall back to any file input on the page.
-						if (globals.debug) {
-							console.log(`      [upload] Resolved element is not a file input — searching nearby`)
-						}
-						const nearbyInput = locator.locator("..").locator("input[type='file']")
-						const nearbyCount = await nearbyInput.count().catch(() => 0)
-						if (nearbyCount > 0) {
-							fileInput = nearbyInput.first()
-						} else {
-							const pageInput = page.locator("input[type='file']")
-							if (await pageInput.count().catch(() => 0) === 0) {
-								throw new Error("upload: could not find a file input on the page")
-							}
-							fileInput = pageInput.first()
-							if (globals.debug) {
-								console.log(`      [upload] Using global file input fallback`)
-							}
-						}
+						throw new Error(`upload: could not find a file input near "${action.ref ?? action.text}"`)
 					}
-				} catch (err) {
-					// resolveActionTarget failed — try a global file input fallback.
+				} else {
+					// No target hint — use the only file input on the page.
 					const pageInput = page.locator("input[type='file']")
-					if (await pageInput.count().catch(() => 0) === 0) throw err
+					if (await pageInput.count() === 0) {
+						throw new Error("upload: could not find a file input on the page")
+					}
 					fileInput = pageInput.first()
 				}
 

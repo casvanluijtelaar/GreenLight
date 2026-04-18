@@ -294,22 +294,15 @@ describe("executeAction with real browser", () => {
 		})
 	})
 
-	it("executes an upload action", async () => {
+	describe("upload action", () => {
 		const fixturePath = fileURLToPath(
 			new URL("../fixtures/upload/sample.txt", import.meta.url),
 		)
-		const browser = await launchBrowser({
-			headed: false,
-			viewport: DEFAULTS.viewport,
-		})
-		const context = await createContext(browser, {
-			headed: false,
-			viewport: DEFAULTS.viewport,
-		})
-		const page = await createPage(context)
-		await page.setContent(`
+
+		const uploadPage = `
 			<html><body>
-				<input type="file" aria-label="Upload document" id="file-input" />
+				<button id="trigger">Attach file</button>
+				<input type="file" id="file-input" style="display:none" />
 				<div id="out"></div>
 				<script>
 					document.getElementById('file-input').addEventListener('change', function() {
@@ -317,16 +310,91 @@ describe("executeAction with real browser", () => {
 					})
 				</script>
 			</body></html>
-		`)
-		const uploadTree: A11yNode[] = [
-			{ ref: "e1", role: "button", name: "Upload document", raw: '- button "Upload document"' },
-		]
-		const action: Action = { action: "upload", ref: "e1", value: fixturePath }
+		`
+
+		it("uploads via testid", async () => {
+			const browser = await launchBrowser({ headed: false, viewport: DEFAULTS.viewport })
+			const context = await createContext(browser, { headed: false, viewport: DEFAULTS.viewport })
+			const page = await createPage(context)
+			await page.setContent(`
+				<html><body>
+					<input type="file" data-testid="file-input" id="file-input" />
+					<div id="out"></div>
+					<script>
+						document.getElementById('file-input').addEventListener('change', function() {
+							document.getElementById('out').textContent = this.files[0]?.name ?? ''
+						})
+					</script>
+				</body></html>
+			`)
+			const action: Action = { action: "upload", testid: "file-input", value: fixturePath }
+			try {
+				const result = await executeAction(page, action, [])
+				expect(result.success).toBe(true)
+				expect(await page.locator("#out").textContent()).toBe("sample.txt")
+			} finally {
+				await context.close()
+				await closeBrowser(browser)
+			}
+		})
+
+		it("uploads via ref to trigger button, finding sibling file input", async () => {
+			const browser = await launchBrowser({ headed: false, viewport: DEFAULTS.viewport })
+			const context = await createContext(browser, { headed: false, viewport: DEFAULTS.viewport })
+			const page = await createPage(context)
+			await page.setContent(uploadPage)
+			const uploadTree: A11yNode[] = [
+				{ ref: "e1", role: "button", name: "Attach file", raw: '- button "Attach file"' },
+			]
+			const action: Action = { action: "upload", ref: "e1", value: fixturePath }
+			try {
+				const result = await executeAction(page, action, uploadTree)
+				expect(result.success).toBe(true)
+				expect(await page.locator("#out").textContent()).toBe("sample.txt")
+			} finally {
+				await context.close()
+				await closeBrowser(browser)
+			}
+		})
+
+		it("uploads via global fallback when no target is specified", async () => {
+			const browser = await launchBrowser({ headed: false, viewport: DEFAULTS.viewport })
+			const context = await createContext(browser, { headed: false, viewport: DEFAULTS.viewport })
+			const page = await createPage(context)
+			await page.setContent(`
+				<html><body>
+					<input type="file" id="file-input" />
+					<div id="out"></div>
+					<script>
+						document.getElementById('file-input').addEventListener('change', function() {
+							document.getElementById('out').textContent = this.files[0]?.name ?? ''
+						})
+					</script>
+				</body></html>
+			`)
+			const action: Action = { action: "upload", value: fixturePath }
+			try {
+				const result = await executeAction(page, action, [])
+				expect(result.success).toBe(true)
+				expect(await page.locator("#out").textContent()).toBe("sample.txt")
+			} finally {
+				await context.close()
+				await closeBrowser(browser)
+			}
+		})
+	})
+
+	it("browser context grants clipboard permissions", async () => {
+		const browser = await launchBrowser({ headed: false, viewport: DEFAULTS.viewport })
+		const context = await createContext(browser, { headed: false, viewport: DEFAULTS.viewport })
+		const page = await createPage(context)
+		await page.setContent(`<html><body></body></html>`)
 		try {
-			const result = await executeAction(page, action, uploadTree)
-			expect(result.success).toBe(true)
-			const fileName = await page.locator("#out").textContent()
-			expect(fileName).toBe("sample.txt")
+			const state = await page.evaluate(async () => {
+				const result = await navigator.permissions.query({ name: "clipboard-read" as PermissionName })
+				return result.state
+			})
+			expect(state).toBe("granted")
 		} finally {
 			await context.close()
 			await closeBrowser(browser)
