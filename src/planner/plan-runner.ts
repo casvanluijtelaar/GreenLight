@@ -37,6 +37,83 @@ import { globals } from "../globals.js"
 
 type AriaRole = Parameters<Page["getByRole"]>[0]
 
+type CompareOperator = NonNullable<Extract<Action, { action: "assert" }>["compare"]>["operator"]
+
+/**
+ * Build an Action object from a HeuristicStep for the default-branch
+ * delegate path (navigate, press, wait, assert, upload). The cached plan
+ * stores `step.action` as a freeform string, so we narrow it here against
+ * the discriminated-union Action variants and copy fields appropriately.
+ */
+function buildHeuristicAction(step: HeuristicStep): Action | null {
+	// Determine ref-or-text scope from the stored selector for actions that
+	// need a target. The new Action union has ref/text/testid only on certain
+	// variants — we read them per-variant below.
+	const selectorText = step.selector?.role
+		? step.selector.name
+		: step.selector?.css
+	const ref = step.selector?.role ? undefined : undefined // role-based selectors are looked up via `text` here
+	const text = selectorText
+	const testid = step.testid
+
+	// Compare asserts: override the assertion so the executor performs a live
+	// numeric comparison instead of an exact text match. Discovery may have
+	// stored a contains_text with a hardcoded value (e.g. "42 resultat"), but
+	// the cached run must compare dynamically against the remembered value.
+	const compare = step.compare
+		? {
+			variable: step.compare.variable,
+			operator: step.compare.operator as CompareOperator,
+			...(step.compare.literal !== undefined ? { literal: step.compare.literal } : {}),
+		}
+		: undefined
+
+	switch (step.action) {
+		case "navigate":
+			if (!step.value) return null
+			return { action: "navigate", value: step.value }
+		case "press":
+			if (!step.value) return null
+			return { action: "press", value: step.value }
+		case "wait":
+			return { action: "wait", ...(step.value ? { value: step.value } : {}) }
+		case "upload":
+			if (!step.value) return null
+			return {
+				action: "upload",
+				value: step.value,
+				...(testid ? { testid } : {}),
+				...(text ? { text } : {}),
+				...(ref ? { ref } : {}),
+			}
+		case "assert": {
+			// If we have a compare clause, use a compare assertion regardless of
+			// what the discovery run captured. Otherwise reuse the captured
+			// assertion. If neither exists, this step can't run.
+			if (compare) {
+				return {
+					action: "assert",
+					assertion: { type: "compare", expected: step.originalStep },
+					...(text ? { ref: undefined } : {}),
+					compare,
+				}
+			}
+			if (step.assertion) {
+				return {
+					action: "assert",
+					assertion: {
+						type: step.assertion.type as Extract<Action, { action: "assert" }>["assertion"]["type"],
+						expected: step.assertion.expected,
+					},
+				}
+			}
+			return null
+		}
+		default:
+			return null
+	}
+}
+
 /** Build a Playwright locator from a stored heuristic selector. */
 function buildLocator(page: Page, selector: HeuristicSelector, stepHint?: string) {
 	if (selector.css) {
@@ -391,35 +468,9 @@ async function executeHeuristicStep(
 
 			default: {
 				// navigate, press, wait, assert, upload → delegate to regular executor
-				const action: Action = {
-					action: step.action,
-					value: step.value,
-					assertion: step.assertion,
-					...(step.testid !== undefined ? { testid: step.testid } : {}),
-				}
-				// Compare asserts: override the assertion type so the executor
-				// performs a live numeric comparison instead of an exact text match.
-				// During discovery the LLM may have stored a contains_text with
-				// a hardcoded value (e.g. "42 resultat"), but the cached run
-				// must compare dynamically against the remembered value.
-				if (step.compare) {
-					action.compare = {
-						variable: step.compare.variable,
-						operator: step.compare.operator as Action["compare"] extends { operator: infer O } ? O : never,
-						...(step.compare.literal !== undefined ? { literal: step.compare.literal } : {}),
-					}
-					action.assertion = { type: "compare", expected: step.originalStep }
-				}
-				if (step.selector) {
-					// For compare asserts that need an element ref to read current value
-					if (step.selector.role) {
-						action.text = step.selector.name
-					} else if (step.selector.css) {
-						action.text = step.selector.css
-					}
-				}
-				if (step.rememberAs) {
-					action.rememberAs = step.rememberAs
+				const action = buildHeuristicAction(step)
+				if (!action) {
+					throw new Error(`Cannot run heuristic step with action "${step.action}"`)
 				}
 				// Pass map context for map_state assertions
 				const mapContext: { adapter: MapAdapter; state?: MapState } | undefined = mapAdapter
@@ -572,7 +623,7 @@ export async function runCachedPlan(
 
 				// Execute each sub-step directly
 				for (const es of expandedSteps) {
-					if (!es.action) continue
+					if (es.kind !== "atomic") continue
 					const subState = await capturePageState(page, consoleDrain, {
 						mapAdapter: mapAdapter ?? undefined,
 					})

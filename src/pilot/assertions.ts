@@ -49,6 +49,8 @@ export async function pollAssertion(
 	throw lastError
 }
 
+type AssertAction = Extract<Action, { action: "assert" }>
+
 /**
  * Execute an assertion against the current page state.
  * Positive assertions (checking something exists/appears) are polled with
@@ -57,14 +59,11 @@ export async function pollAssertion(
  */
 export async function executeAssertion(
 	page: Page,
-	action: Action,
+	action: AssertAction,
 	a11yTree: A11yNode[],
 	mapContext?: { state?: MapState; adapter?: MapAdapter },
 ): Promise<void> {
 	const assertion = action.assertion
-	if (!assertion) {
-		throw new Error("executeAssertion called without an assertion")
-	}
 
 	// Handle compare assertions separately — they need the value store
 	if (assertion.type === "compare" && action.compare) {
@@ -206,7 +205,7 @@ export async function findValueByKeyword(page: Page, hint: string): Promise<stri
 
 export async function executeCompareAssertion(
 	page: Page,
-	action: Action,
+	action: AssertAction,
 	a11yTree: A11yNode[],
 ): Promise<void> {
 	if (!action.compare) {
@@ -222,7 +221,7 @@ export async function executeCompareAssertion(
 		rememberedText = literal
 	} else if (globals.valueStore.has(variable)) {
 		rememberedText = globals.valueStore.get(variable) ?? ""
-	} else if (action.assertion?.expected && /^-?\d+\.?\d*$/.test(action.assertion.expected.trim())) {
+	} else if (action.assertion.expected && /^-?\d+\.?\d*$/.test(action.assertion.expected.trim())) {
 		// Fallback: expected is a pure number — treat as literal comparison
 		rememberedText = action.assertion.expected.trim()
 		if (globals.debug) {
@@ -235,9 +234,9 @@ export async function executeCompareAssertion(
 	// Get the current value.
 	// If the assertion's expected text matches a stored variable (e.g. from a
 	// preceding COUNT), use that directly instead of reading from the page.
-	// Otherwise, try the element ref/text first; if stale, fall back to keyword search.
+	// Otherwise, try the element ref first; if stale, fall back to keyword search.
 	let currentText: string
-	const searchHint = action.assertion?.expected ?? variable
+	const searchHint = action.assertion.expected ?? variable
 	const hintAsVar = searchHint.replace(/\s+/g, "_").toLowerCase()
 	if (globals.valueStore.has(searchHint)) {
 		currentText = globals.valueStore.get(searchHint) ?? ""
@@ -249,9 +248,10 @@ export async function executeCompareAssertion(
 		if (globals.debug) {
 			console.log(`      [compare] Using stored variable "${hintAsVar}" = "${currentText}" as current value`)
 		}
-	} else if (action.ref || action.text) {
+	} else if (action.ref) {
 		try {
-			const locator = await resolveActionTarget(page, action, a11yTree)
+			// Build a click-shaped locator target so resolveActionTarget can find it.
+			const locator = await resolveActionTarget(page, { action: "click", ref: action.ref }, a11yTree)
 			currentText = (await locator.textContent() ?? "").trim()
 			// If the element was found but contains no number, the LLM likely
 			// picked a nearby element (e.g. a heading instead of the count).
@@ -271,8 +271,7 @@ export async function executeCompareAssertion(
 	} else {
 		// Prefer assertion.expected (the step description, often in page language)
 		// over the variable name (often an English identifier like "product_count").
-		const hint = action.assertion?.expected ?? variable
-		currentText = await findValueByKeyword(page, hint)
+		currentText = await findValueByKeyword(page, action.assertion.expected ?? variable)
 	}
 
 	const rememberedNum = extractNumber(rememberedText)

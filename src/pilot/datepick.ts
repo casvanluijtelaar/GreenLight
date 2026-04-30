@@ -22,8 +22,7 @@
 
 import * as chrono from "chrono-node"
 import Fuse from "fuse.js"
-import type { A11yNode, Action } from "../reporter/types.js"
-import type { PlannedStep } from "./response-parser.js"
+import type { A11yNode, Action, PlannedStep } from "../reporter/types.js"
 import { globals } from "../globals.js"
 
 /** Roles that represent date/time picker sections. */
@@ -179,6 +178,7 @@ export function resolveDatePick(step: string, a11yTree: A11yNode[], groupHint?: 
 					const value = pattern.extract(parsed)
 					const action: Action = { action: "type", ref: section.ref, value }
 					results.push({
+						kind: "atomic",
 						step: `type ${section.ref} = "${value}"`,
 						action,
 					})
@@ -208,6 +208,7 @@ export function resolveDatePick(step: string, a11yTree: A11yNode[], groupHint?: 
 		}
 
 		results.push({
+			kind: "atomic",
 			step: `type ${nativeInput.ref} = "${value}"`,
 			action: { action: "type", ref: nativeInput.ref, value },
 		})

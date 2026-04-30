@@ -19,7 +19,7 @@
  */
 
 import type { Page, Locator } from "playwright"
-import type { A11yNode, Action, ResolvedSelector } from "../reporter/types.js"
+import type { A11yNode, ResolvedSelector } from "../reporter/types.js"
 
 export type AriaRole = Parameters<Page["getByRole"]>[0]
 
@@ -299,12 +299,20 @@ export async function resolveByText(page: Page, text: string): Promise<Locator> 
 	return page.getByText(text)
 }
 
+/** Subset of Action fields used by element-targeting helpers. */
+export type Targetable = {
+	action?: string
+	ref?: string
+	text?: string
+	testid?: string
+}
+
 /**
  * Resolve a locator from an action's ref or text field.
  */
 export async function resolveActionTarget(
 	page: Page,
-	action: Action,
+	action: Targetable,
 	a11yTree: A11yNode[],
 	stepHint?: string,
 ): Promise<Locator> {
@@ -314,7 +322,7 @@ export async function resolveActionTarget(
 	if (action.text) {
 		return resolveByText(page, action.text)
 	}
-	throw new Error(`${action.action} action requires a ref or text target`)
+	throw new Error(`${action.action ?? "action"} requires a ref or text target`)
 }
 
 /**
@@ -367,7 +375,7 @@ export async function extractCssSelector(
  */
 export async function extractSelectorInfo(
 	page: Page,
-	action: Action,
+	action: Targetable,
 	a11yTree: A11yNode[],
 	locator: Locator,
 ): Promise<ResolvedSelector | undefined> {

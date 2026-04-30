@@ -185,7 +185,7 @@ describe("executeAction with real browser", () => {
 			const action: Action = {
 				action: "select",
 				ref: "e4",
-				value: "Green",
+				option: "Green",
 			}
 			const result = await executeAction(page, action, tree)
 			expect(result.success).toBe(true)

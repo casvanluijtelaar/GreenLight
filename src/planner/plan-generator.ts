@@ -19,17 +19,30 @@
  * to capture concrete actions and produce a HeuristicPlan.
  */
 
-import type { Action, ExecutionResult } from "../reporter/types.js"
+import type { Action, ExecutionResult, PlannedStep } from "../reporter/types.js"
 import type { HeuristicPlan, HeuristicStep } from "./plan-types.js"
 import type { Condition } from "../pilot/conditions.js"
-import type { PlannedStep } from "../pilot/response-parser.js"
+
+/**
+ * Synthetic action shape recorded for non-Action plan markers like
+ * datepick or map_detect. These don't go through the executor — the
+ * recorder stores them so cached replay can re-trigger the same logic.
+ */
+export interface SyntheticAction {
+	action: "datepick" | "map_detect"
+	value?: string
+	option?: string
+}
+
+/** What the recorder accepts for `action`: either a real Action or a synthetic marker. */
+export type RecordedAction = Action | SyntheticAction
 
 /** Records concrete actions during a discovery run. */
 export interface PlanRecorder {
 	/** Record a successful step execution. */
 	recordStep(
 		step: string,
-		action: Action,
+		action: RecordedAction,
 		result: ExecutionResult,
 		postState: { url: string; title: string },
 	): void
@@ -75,27 +88,31 @@ export function createPlanRecorder(
 				hStep.selector = { ...result.resolvedSelector }
 			}
 
-			if (action.value !== undefined) {
+			// Read variant-specific fields safely from the discriminated union.
+			// Each lookup is an `in` check so we don't hit "property does not
+			// exist on variant X" type errors.
+			if ("value" in action && action.value !== undefined) {
 				hStep.value = action.value
 			}
 
-			if (action.testid !== undefined) {
+			if ("testid" in action && action.testid !== undefined) {
 				hStep.testid = action.testid
 			}
 
-			if (action.option !== undefined) {
+			if ("option" in action && action.option !== undefined) {
 				hStep.option = action.option
 			}
 
-			if (action.rememberAs !== undefined) {
-				hStep.rememberAs = action.rememberAs
+			// `as` lives on remember/count variants in the new schema
+			if ("as" in action && action.as !== undefined) {
+				hStep.rememberAs = action.as
 			}
 
-			if (action.compare) {
+			if ("compare" in action && action.compare) {
 				hStep.compare = { ...action.compare }
 			}
 
-			if (action.assertion) {
+			if ("assertion" in action && action.assertion) {
 				hStep.assertion = { ...action.assertion }
 			}
 

@@ -26,13 +26,13 @@ import type {
 	ConsoleEntry,
 	MapState,
 	PageState,
+	PlannedStep,
 	StepResult,
 	StepTiming,
 	TestCaseResult,
 } from "../reporter/types.js"
 import type { LLMClient } from "./llm.js"
-import type { PlannedStep } from "./response-parser.js"
-import { fixPlanOrdering, validatePlanReferences } from "./response-parser.js"
+import { fixPlanOrdering, validatePlanReferences } from "./llm/plan-utils.js"
 import { resolveDatePick } from "./datepick.js"
 import { stepNeedsRandom, injectRandomValues, replaceWithPlaceholders, type RandomValues } from "./random.js"
 import { capturePageState } from "./state.js"
@@ -42,6 +42,58 @@ import type { PlanRecorder } from "../planner/plan-generator.js"
 import type { MapAdapter } from "../map/types.js"
 import { detectMap } from "../map/index.js"
 import { globals } from "../globals.js"
+
+type CompareClause = NonNullable<Extract<Action, { action: "assert" }>["compare"]>
+
+/** Read `ref` from an action variant, if that variant has one. Otherwise undefined. */
+function actionRef(a: Action): string | undefined {
+	return "ref" in a ? a.ref : undefined
+}
+
+/** Read `text` from an action variant, if that variant has one. */
+function actionText(a: Action): string | undefined {
+	return "text" in a ? a.text : undefined
+}
+
+/** Read `value` from an action variant, if that variant has one. */
+function actionValue(a: Action): string | undefined {
+	return "value" in a ? a.value : undefined
+}
+
+/**
+ * Replace an Action with an assert action carrying compare metadata. Used
+ * when the plan declared a compare assertion: we override whatever the
+ * runtime LLM returned with the plan's authoritative compare clause.
+ */
+function attachCompare(
+	previous: Action,
+	compare: { variable: string; operator: string; literal?: string },
+	expected: string,
+): Action {
+	return {
+		action: "assert",
+		assertion: { type: "compare", expected },
+		...(actionRef(previous) ? { ref: actionRef(previous) } : {}),
+		compare: {
+			variable: compare.variable,
+			operator: compare.operator as CompareClause["operator"],
+			...(compare.literal !== undefined ? { literal: compare.literal } : {}),
+		},
+	}
+}
+
+/**
+ * If the plan declared this step as a remember, ensure the action is shaped
+ * as a remember regardless of what the LLM returned.
+ */
+function attachRememberAs(previous: Action, as: string): Action {
+	return {
+		action: "remember",
+		as,
+		...(actionRef(previous) ? { ref: actionRef(previous) } : {}),
+		...(actionText(previous) ? { text: actionText(previous) } : {}),
+	}
+}
 
 export interface PilotOptions {
 	/** Per-step timeout in ms. */
@@ -119,14 +171,14 @@ export async function runTestCase(
 		if (globals.debug) {
 			console.log(`      Plan error: ${msg}`)
 		}
-		plan = testCase.steps.map((s) => ({ step: s, action: null }))
+		plan = testCase.steps.map((s): PlannedStep => ({ kind: "page", step: s }))
 	}
 	trace.log("plan:done", `${String(Math.round(performance.now() - planStart))}ms`)
 	if (globals.debug) {
 		console.log(`\n      Plan output (${String(plan.length)} actions):`)
 		for (let i = 0; i < plan.length; i++) {
 			const p = plan[i]
-			const label = p.action ? JSON.stringify(p.action) : "(needs page state)"
+			const label = p.kind === "atomic" ? JSON.stringify(p.action) : `(${p.kind})`
 			console.log(`        ${String(i + 1)}. ${p.step} → ${label}`)
 		}
 		console.log()
@@ -174,10 +226,19 @@ export async function runTestCase(
 		const planned = queue[queueIndex]
 		queueIndex++
 		currentQueuePlanned = planned
-		const { step, action: plannedAction, needsExpansion, needsDatePick, needsMapDetect, needsCount, rememberAs, compare: plannedCompare } = planned
+		const step = planned.step
+		// Pre-resolved action and pre-step compare metadata (only present on atomic)
+		const plannedAction: Action | null = planned.kind === "atomic" ? planned.action : null
+		const plannedCompare: CompareClause | undefined =
+			plannedAction?.action === "assert" ? plannedAction.compare : undefined
+		// Variable name a remember/count step writes to (only present on atomic remember/count)
+		const rememberAs: string | undefined =
+			plannedAction && (plannedAction.action === "remember" || plannedAction.action === "count")
+				? plannedAction.as
+				: undefined
 
 		// ── MAP_DETECT: find and attach to a map instance ─────────────
-		if (needsMapDetect) {
+		if (planned.kind === "mapdetect") {
 			trace.log("map:detect", step)
 			const stepStart = performance.now()
 			try {
@@ -226,7 +287,7 @@ export async function runTestCase(
 		}
 
 		// ── EXPAND: runtime step expansion (e.g. form filling) ────────
-		if (needsExpansion) {
+		if (planned.kind === "expand") {
 			trace.log("expand:start", step)
 			if (globals.debug) {
 				console.log(`\n      Expanding compound step: ${step}`)
@@ -249,7 +310,7 @@ export async function runTestCase(
 				if (globals.debug) {
 					console.log(`\n      Expanded into ${String(expandedSteps.length)} sub-steps:`)
 					for (const es of expandedSteps) {
-						const label = es.action ? JSON.stringify(es.action) : "(needs page state)"
+						const label = es.kind === "atomic" ? JSON.stringify(es.action) : `(${es.kind})`
 						console.log(`        - ${es.step} → ${label}`)
 					}
 					console.log()
@@ -271,7 +332,7 @@ export async function runTestCase(
 		}
 
 		// ── DATEPICK: resolve date/time picker with chrono-node ──────
-		if (needsDatePick) {
+		if (planned.kind === "datepick") {
 			trace.log("datepick:start", step)
 			if (globals.debug) {
 				console.log(`\n      Resolving date picker step: ${step}`)
@@ -292,7 +353,11 @@ export async function runTestCase(
 				const groupStep = `Which date/time picker group on this page should be used for: "${step}"? Respond with ONLY the group name, nothing else.`
 				const groupAction = await llm.resolveStep(groupStep, state)
 				// The LLM returns a text action — extract the group name from the value or text
-				groupHint = groupAction.value ?? groupAction.text
+				if ("value" in groupAction && groupAction.value) {
+					groupHint = groupAction.value
+				} else if ("text" in groupAction && groupAction.text) {
+					groupHint = groupAction.text
+				}
 				if (globals.debug) {
 					console.log(`      [datepick] LLM group hint: "${groupHint ?? "none"}"`)
 				}
@@ -309,7 +374,8 @@ export async function runTestCase(
 				if (globals.debug) {
 					console.log(`      Date picker resolved into ${String(expandedSteps.length)} sub-steps:`)
 					for (const es of expandedSteps) {
-						console.log(`        - ${JSON.stringify(es.action)}`)
+						const label = es.kind === "atomic" ? JSON.stringify(es.action) : `(${es.kind})`
+						console.log(`        - ${label}`)
 					}
 					console.log()
 				}
@@ -344,7 +410,7 @@ export async function runTestCase(
 		}
 
 		// ── CONDITIONAL: evaluate condition and splice chosen branch ──
-		if (planned.condition) {
+		if (planned.kind === "conditional") {
 			trace.log("condition:eval", `${planned.condition.type} "${planned.condition.target}"`)
 			const stepStart = performance.now()
 
@@ -390,10 +456,12 @@ export async function runTestCase(
 			continue
 		}
 
-		// ── COUNT: count elements on the live page ──────────────────
-		if (needsCount) {
+		// ── ATOMIC count: count elements on the live page ────────────
+		// (the planner emits these as kind="atomic" with action.action="count")
+		if (planned.kind === "atomic" && planned.action.action === "count") {
 			trace.log("count:start", step)
 			const stepStart2 = performance.now()
+			const countTargetAs = planned.action.as
 
 			if (options.waitForNetworkIdle) {
 				await options.waitForNetworkIdle()
@@ -404,20 +472,24 @@ export async function runTestCase(
 
 			try {
 				// Ask the LLM to identify the common denominator text for the elements to count
-				const countAction = await llm.resolveStep(
+				const resolved = await llm.resolveStep(
 					`Count the number of elements matching: "${step}". Return a count action with the common text or role description that matches all target elements.`,
 					state,
 				)
 
-				// Ensure it's treated as a count action
-				if (countAction.action !== "count") {
-					countAction.action = "count"
-				}
-				if (!countAction.text && !countAction.ref) {
+				// Build a guaranteed-count action from the resolved hint
+				const refHint = "ref" in resolved ? resolved.ref : undefined
+				let textHint = "text" in resolved ? resolved.text : undefined
+				if (!textHint && !refHint) {
 					// Use the step description as fallback
-					countAction.text = step
+					textHint = step
 				}
-				countAction.rememberAs = rememberAs
+				const countAction: Extract<Action, { action: "count" }> = {
+					action: "count",
+					as: countTargetAs,
+					...(refHint ? { ref: refHint } : {}),
+					...(textHint ? { text: textHint } : {}),
+				}
 
 				if (globals.debug) {
 					console.log(`      [count] LLM resolved: text="${countAction.text ?? ""}" ref="${countAction.ref ?? ""}"`)
@@ -438,15 +510,15 @@ export async function runTestCase(
 				}
 
 				// Store the count in valueStore
-				if (result.rememberedValue !== undefined && rememberAs) {
-					globals.valueStore.set(rememberAs, result.rememberedValue)
+				if (result.rememberedValue !== undefined) {
+					globals.valueStore.set(countTargetAs, result.rememberedValue)
 				}
 
 				// Record in heuristic plan
 				if (recorder) {
 					recorder.recordStep(
 						step,
-						{ ...countAction, value: countAction.text },
+						{ ...countAction, ...(countAction.text ? { value: countAction.text } : {}) },
 						result,
 						{ url: page.url(), title: await page.title() },
 					)
@@ -474,7 +546,9 @@ export async function runTestCase(
 			continue
 		}
 
-		// ── Normal step execution (same as before) ───────────────────
+		// ── PAGE / ATOMIC: normal step execution ─────────────────────
+		// kind === "page" needs runtime resolution; kind === "atomic" runs
+		// the pre-resolved action (with optional ref-based state capture).
 		trace.log("step:start", step)
 		const stepStart = performance.now()
 		let action: Action | null = null
@@ -509,7 +583,7 @@ export async function runTestCase(
 				// the action uses a ref (needed for locator resolution).
 				action = plannedAction
 				trace.log("plan:hit", JSON.stringify(action))
-				if (action.ref) {
+				if (actionRef(action)) {
 					let t0 = performance.now()
 					if (options.waitForNetworkIdle) {
 						await options.waitForNetworkIdle()
@@ -567,19 +641,16 @@ export async function runTestCase(
 
 			// For map_state assertions on pre-planned actions (no state capture
 			// above), fetch fresh map state so the assertion has data to check.
-			if (action.assertion?.type === "map_state" && !latestMapState && mapAdapter) {
+			if (action.action === "assert" && action.assertion.type === "map_state" && !latestMapState && mapAdapter) {
 				const { captureMapState: getMapState } = await import("../map/index.js")
 				latestMapState = await getMapState(page, mapAdapter)
 			}
 
-			// Propagate rememberAs from planned step to action
-			if (rememberAs) {
-				action.rememberAs = rememberAs
-				// If the LLM didn't return a "remember" action for a REMEMBER step,
-				// wrap it as one so the executor captures the value
-				if (action.action !== "remember") {
-					action = { action: "remember", ref: action.ref, text: action.text, rememberAs }
-				}
+			// Propagate rememberAs from planned step to action.
+			// If the LLM didn't return a "remember" action for a REMEMBER step,
+			// wrap it as one so the executor captures the value.
+			if (rememberAs && action.action !== "count") {
+				action = attachRememberAs(action, rememberAs)
 			}
 
 			// Propagate compare metadata from planned step to action.
@@ -587,13 +658,7 @@ export async function runTestCase(
 			// whatever the runtime LLM may have generated (it doesn't know
 			// about literal values or the correct variable name).
 			if (plannedCompare) {
-				action.compare = {
-					variable: plannedCompare.variable,
-					operator: plannedCompare.operator as Action["compare"] extends { operator: infer O } ? O : never,
-					...(plannedCompare.literal !== undefined ? { literal: plannedCompare.literal } : {}),
-				}
-				action.assertion = { type: "compare", expected: step }
-				action.action = "assert"
+				action = attachCompare(action, plannedCompare, step)
 			}
 
 			if (globals.debug) {
@@ -620,7 +685,7 @@ export async function runTestCase(
 				// Escalate to planner model for a second opinion before giving up
 				if (lastPageState) {
 					try {
-						const plannerAction = await llm.resolveStepWithPlanner(resolveStep, lastPageState)
+						let plannerAction = await llm.resolveStepWithPlanner(resolveStep, lastPageState)
 						if (plannerAction) {
 							if (globals.debug) {
 								console.log(`      [escalate] Pilot failed, retrying with planner model`)
@@ -628,20 +693,11 @@ export async function runTestCase(
 							}
 
 							// Propagate plan metadata to the escalated action
-							if (rememberAs) {
-								plannerAction.rememberAs = rememberAs
-								if (plannerAction.action !== "remember") {
-									plannerAction.action = "remember"
-								}
+							if (rememberAs && plannerAction.action !== "count") {
+								plannerAction = attachRememberAs(plannerAction, rememberAs)
 							}
 							if (plannedCompare) {
-								plannerAction.compare = {
-									variable: plannedCompare.variable,
-									operator: plannedCompare.operator as Action["compare"] extends { operator: infer O } ? O : never,
-									...(plannedCompare.literal !== undefined ? { literal: plannedCompare.literal } : {}),
-								}
-								plannerAction.assertion = { type: "compare", expected: step }
-								plannerAction.action = "assert"
+								plannerAction = attachCompare(plannerAction, plannedCompare, step)
 							}
 
 							const retryResult = await executeAction(page, plannerAction, a11yTree, undefined, {
@@ -656,8 +712,8 @@ export async function runTestCase(
 								action = plannerAction
 
 								// Store remembered value
-								if (retryResult.rememberedValue !== undefined && plannerAction.rememberAs) {
-									globals.valueStore.set(plannerAction.rememberAs, retryResult.rememberedValue)
+								if (retryResult.rememberedValue !== undefined && plannerAction.action === "remember") {
+									globals.valueStore.set(plannerAction.as, retryResult.rememberedValue)
 								}
 
 								// Wait for page to stabilize
@@ -670,8 +726,8 @@ export async function runTestCase(
 
 								// Record in heuristic plan
 								if (recorder && !insideDatePick) {
-									const recordAction = randomValues && plannerAction.value
-										? { ...plannerAction, value: replaceWithPlaceholders(plannerAction.value, randomValues) }
+									const recordAction = randomValues && actionValue(plannerAction)
+										? { ...plannerAction, value: replaceWithPlaceholders(actionValue(plannerAction) as string, randomValues) }
 										: plannerAction
 									recorder.recordStep(step, recordAction, retryResult, {
 										url: page.url(),
@@ -710,8 +766,8 @@ export async function runTestCase(
 			}
 
 			// Store remembered value if this was a remember action
-			if (result.rememberedValue !== undefined && action.rememberAs) {
-				globals.valueStore.set(action.rememberAs, result.rememberedValue)
+			if (result.rememberedValue !== undefined && action.action === "remember") {
+				globals.valueStore.set(action.as, result.rememberedValue)
 			}
 
 			// Wait for navigation to complete after mutating actions.
@@ -770,8 +826,8 @@ export async function runTestCase(
 			if (recorder && !insideDatePick) {
 				// Replace random values with placeholders so cached runs
 				// generate fresh random values on replay.
-				const recordAction = randomValues && action.value
-					? { ...action, value: replaceWithPlaceholders(action.value, randomValues) }
+				const recordAction = randomValues && actionValue(action)
+					? { ...action, value: replaceWithPlaceholders(actionValue(action) as string, randomValues) }
 					: action
 				recorder.recordStep(step, recordAction, result, {
 					url: postState.url,

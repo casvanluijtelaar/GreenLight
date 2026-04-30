@@ -38,6 +38,7 @@ export const assertionTypeSchema = z.enum([
 	"element_enabled",
 	"contains_remembered",
 	"map_state",
+	"compare",
 ])
 
 export const assertionSchema = z.object({

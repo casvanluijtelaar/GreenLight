@@ -15,12 +15,35 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Parsing and validation for LLM responses.
+ * Legacy text-format parsing and validation for LLM responses.
+ *
+ * This module handles the older line-based plan response format used by
+ * the original pre-structured LLM provider path. The structured-output
+ * path bypasses this file entirely (LLMClient -> JSON Schema -> typed
+ * Action / PlannedStep). Tests still exercise this parser to keep the
+ * legacy path compiling, so the local `Action` and `PlannedStep` shapes
+ * here are independent of the new discriminated-union types.
  */
 
-import type { Action } from "../reporter/types.js"
 import type { Condition } from "./conditions.js"
 import { extractQuotedText } from "./locator.js"
+
+/** Flat-shape action used by the legacy text parser. */
+interface Action {
+	action: string
+	ref?: string
+	text?: string
+	testid?: string
+	value?: string
+	option?: string
+	assertion?: { type: string; expected: string }
+	rememberAs?: string
+	compare?: {
+		variable: string
+		operator: string
+		literal?: string
+	}
+}
 
 /** A single planned step: the display label and either a pre-resolved action or null. */
 export interface PlannedStep {
@@ -109,10 +132,7 @@ export function parseActionResponse(raw: string): Action {
 		const variable = extractParam(cleaned, "variable")
 		const operator = extractParam(cleaned, "operator")
 		if (variable && operator) {
-			action.compare = {
-				variable,
-				operator: operator as Action["compare"] extends { operator: infer O } ? O : never,
-			}
+			action.compare = { variable, operator }
 			const literal = extractParam(cleaned, "literal")
 			if (literal) action.compare.literal = literal
 		}
@@ -467,6 +487,10 @@ export function extractComparisonFromText(
  * that references the same variable, swap them so the COMPARE runs first
  * (against the previous baseline) and the REMEMBER captures the new value.
  * Without this fix, the COMPARE would always compare a value against itself.
+ *
+ * Operates on the legacy flat-flag PlannedStep shape (this file's local
+ * type). The structured-output path uses the equivalent helper in
+ * src/pilot/llm/plan-utils.ts on the new discriminated-union shape.
  */
 export function fixPlanOrdering(plan: PlannedStep[]): void {
 	for (let i = 0; i < plan.length - 1; i++) {
@@ -490,6 +514,10 @@ export function fixPlanOrdering(plan: PlannedStep[]): void {
 /**
  * Validate that every COMPARE in the plan references a REMEMBER that
  * appears earlier. Returns an array of error messages (empty if valid).
+ *
+ * Operates on the legacy flat-flag PlannedStep shape (this file's local
+ * type). The structured-output path uses the equivalent helper in
+ * src/pilot/llm/plan-utils.ts on the new discriminated-union shape.
  */
 export function validatePlanReferences(plan: PlannedStep[]): string[] {
 	const errors: string[] = []

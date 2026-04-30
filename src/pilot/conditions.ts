@@ -22,12 +22,9 @@
  */
 
 import type { Page } from "playwright"
+import type { Condition } from "./llm/schemas/index.js"
 
-/** A condition to evaluate at runtime. */
-export interface Condition {
-	type: "visible" | "contains" | "url"
-	target: string
-}
+export type { Condition } from "./llm/schemas/index.js"
 
 /** Evaluate a condition against the live page. Returns true if the condition is met. */
 export async function evaluateCondition(page: Page, condition: Condition): Promise<boolean> {

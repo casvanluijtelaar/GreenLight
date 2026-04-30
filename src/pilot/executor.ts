@@ -341,8 +341,9 @@ export async function executeAction(
 			}
 
 			case "select": {
-				if (!action.value) {
-					throw new Error("select action requires a value")
+				const optionLabel = action.option
+				if (!optionLabel) {
+					throw new Error("select action requires an option")
 				}
 				const locator = await resolveActionTarget(page, action, a11yTree, stepHint)
 				resolvedSelector = await extractSelectorInfo(
@@ -356,7 +357,7 @@ export async function executeAction(
 				// the option by text.
 				const tagName = await locator.evaluate((el) => el.tagName).catch(() => "")
 				if (tagName === "SELECT") {
-					await locator.selectOption({ label: action.value })
+					await locator.selectOption({ label: optionLabel })
 				} else {
 					if (globals.debug) {
 						console.log(`      [select] Element is not a <select>, using click-to-open strategy`)
@@ -405,13 +406,13 @@ export async function executeAction(
 								if (globals.debug) {
 									console.log(`      [select] Found menu container: #${menuId}`)
 								}
-								const opt = menu.getByText(action.value, { exact: true })
+								const opt = menu.getByText(optionLabel, { exact: true })
 								if (await opt.first().isVisible().catch(() => false)) {
 									await opt.first().click()
 									clicked = true
 								} else {
 									// Try loose match within menu
-									const loose = menu.getByText(action.value)
+									const loose = menu.getByText(optionLabel)
 									if (await loose.first().isVisible().catch(() => false)) {
 										await loose.first().click()
 										clicked = true
@@ -437,7 +438,7 @@ export async function executeAction(
 								for (let i = 0; i < count && !clicked; i++) {
 									const container = containers.nth(i)
 									if (!await container.isVisible().catch(() => false)) continue
-									const opt = container.getByText(action.value, { exact: true })
+									const opt = container.getByText(optionLabel, { exact: true })
 									if (await opt.first().isVisible().catch(() => false)) {
 										if (globals.debug) {
 											console.log(`      [select] Found option in ${sel} container`)
@@ -454,9 +455,9 @@ export async function executeAction(
 					// Strategy 3: Role-based page-wide (menuitem/option only)
 					if (!clicked) {
 						const roleCandidates = [
-							page.getByRole("menuitem", { name: action.value }),
-							page.getByRole("menuitemradio", { name: action.value }),
-							page.getByRole("option", { name: action.value }),
+							page.getByRole("menuitem", { name: optionLabel }),
+							page.getByRole("menuitemradio", { name: optionLabel }),
+							page.getByRole("option", { name: optionLabel }),
 						]
 						for (const opt of roleCandidates) {
 							try {
@@ -474,7 +475,7 @@ export async function executeAction(
 
 					if (!clicked) {
 						throw new Error(
-							`Could not find option "${action.value}" in custom dropdown`,
+							`Could not find option "${optionLabel}" in custom dropdown`,
 						)
 					}
 				}
@@ -606,26 +607,14 @@ export async function executeAction(
 			}
 
 			case "scroll": {
-				if (action.ref || action.text) {
-					// Scroll a specific element into view
-					const locator = await resolveActionTarget(page, action, a11yTree, stepHint)
-					resolvedSelector = await extractSelectorInfo(
-						page,
-						action,
-						a11yTree,
-						locator,
-					)
-					await locator.scrollIntoViewIfNeeded()
+				const dir = action.value.toLowerCase()
+				if (dir === "top") {
+					await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
+				} else if (dir === "bottom") {
+					await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" }))
 				} else {
-					const dir = (action.value ?? "down").toLowerCase()
-					if (dir === "top") {
-						await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
-					} else if (dir === "bottom") {
-						await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" }))
-					} else {
-						const delta = dir === "up" ? -500 : 500
-						await page.mouse.wheel(0, delta)
-					}
+					const delta = dir === "up" ? -500 : 500
+					await page.mouse.wheel(0, delta)
 				}
 				break
 			}
@@ -759,7 +748,7 @@ export async function executeAction(
 					// likely picked the wrong element. Fall back to page-text
 					// keyword search (same strategy as compare assertions).
 					const wantsNumber = /number|count|total|amount|qty|quantity|pris|antal|resultat/.test(
-						(action.rememberAs ?? "").toLowerCase() + " " + (stepHint ?? "").toLowerCase(),
+						action.as.toLowerCase() + " " + (stepHint ?? "").toLowerCase(),
 					)
 					if (!locatorResolved || (wantsNumber && !/\d/.test(capturedText))) {
 						if (globals.debug && locatorResolved) {
@@ -767,7 +756,7 @@ export async function executeAction(
 						}
 						// Use the step hint (original step text) as search hint —
 						// it contains page-language terms. Fall back to variable name.
-						const searchHint = stepHint ?? (action.rememberAs ?? "").replace(/_/g, " ")
+						const searchHint = stepHint ?? action.as.replace(/_/g, " ")
 						try {
 							capturedText = await findValueByKeyword(page, searchHint)
 							if (globals.debug) {
@@ -776,7 +765,7 @@ export async function executeAction(
 						} catch {
 							if (!locatorResolved) {
 								throw new Error(
-									`remember action: element ref "${action.ref}" not found and keyword search found no match`,
+									`remember action: element ref "${action.ref ?? ""}" not found and keyword search found no match`,
 								)
 							}
 						}
@@ -788,7 +777,7 @@ export async function executeAction(
 					if (globals.debug) {
 						console.log(`      [remember] No ref/text target, searching page text for matching value`)
 					}
-					const searchHint = stepHint ?? (action.rememberAs ?? "").replace(/_/g, " ")
+					const searchHint = stepHint ?? action.as.replace(/_/g, " ")
 					try {
 						capturedText = await findValueByKeyword(page, searchHint)
 					} catch {
@@ -804,22 +793,21 @@ export async function executeAction(
 					const preview = capturedText.length > 80
 						? capturedText.slice(0, 80) + "..."
 						: capturedText
-					console.log(`      [remember] Captured "${preview}" as "${action.rememberAs ?? ""}"`)
+					console.log(`      [remember] Captured "${preview}" as "${action.as}"`)
 				}
 				rememberedValue = capturedText
 				break
 			}
 
 			case "assert": {
-				if (!action.assertion) {
-					throw new Error("assert action requires an assertion")
-				}
 				await executeAssertion(page, action, a11yTree, mapContext)
 				break
 			}
 
-			default:
-				throw new Error(`Unknown action: ${action.action}`)
+			default: {
+				const _exhaustive: never = action
+				throw new Error(`Unknown action: ${JSON.stringify(_exhaustive)}`)
+			}
 		}
 
 		return {

@@ -18,6 +18,8 @@
  * Shared result and state types used across the Pilot, Runner, and Reporters.
  */
 
+import type { Action } from "../pilot/llm/schemas/index.js"
+
 /** An annotated node from the accessibility tree with a stable element ref. */
 export interface A11yNode {
 	ref: string
@@ -125,12 +127,27 @@ export interface StepTiming {
 	settle?: number
 }
 
+/**
+ * What the recorder/runner stored for a step's action. Either a real
+ * Action variant, a synthetic plan marker (datepick / map_detect), or
+ * null for steps that don't produce an action (conditionals, planning
+ * failures, etc.). Reporters consume this purely for display.
+ */
+export type RecordedAction =
+	| Action
+	| { action: "datepick"; value?: string; option?: string }
+	| { action: "map_detect" }
+	// Cached-replay records may carry the freeform step.action string from
+	// a HeuristicStep (which may be any of the above plus things like
+	// "conditional"). We accept that here for display purposes.
+	| { action: string; value?: string; assertion?: { type: string; expected: string } }
+
 /** Result of a single step within a test case. */
 export interface StepResult {
 	/** The plain-English step text. */
 	step: string
-	/** The action the LLM chose. */
-	action: Action | null
+	/** The action the LLM chose, a synthetic plan marker, or null. */
+	action: RecordedAction | null
 	/** Pass or fail. */
 	status: "passed" | "failed"
 	/** Total duration for this step (LLM + execution) in ms. */
@@ -166,34 +183,9 @@ export interface TestCaseResult {
 	completedInputSteps?: number
 }
 
-/** A structured action returned by the LLM for a single step. */
-export interface Action {
-	/** The action type (click, type, select, scroll, navigate, wait, assert). */
-	action: string
-	/** Element ref from the a11y tree (e.g. "e5"). */
-	ref?: string
-	/** Visible text to target when the element is not in the a11y tree. */
-	text?: string
-	/** data-testid attribute value to target an element directly (bypasses a11y tree). */
-	testid?: string
-	/** Value to type, URL to navigate to, option to select, etc. */
-	value?: string
-	/** For autocomplete actions: the specific suggestion to select (defaults to first if omitted). */
-	option?: string
-	/** Assertion details for assert actions. */
-	assertion?: {
-		type: string
-		expected: string
-	}
-	/** For remember actions: the variable name to store the captured value. */
-	rememberAs?: string
-	/** For compare assertions: reference to a remembered variable (or a literal value) and operator. */
-	compare?: {
-		/** The remembered variable name to compare against (ignored when `literal` is set). */
-		variable: string
-		/** Comparison operator. */
-		operator: "less_than" | "greater_than" | "equal" | "not_equal" | "less_or_equal" | "greater_or_equal"
-		/** When set, compare the page value against this literal instead of a remembered variable. */
-		literal?: string
-	}
-}
+/**
+ * Structured action returned by the LLM for a single step.
+ * Discriminated union over the `action` field. Each variant carries only the
+ * fields valid for that action type. See src/pilot/llm/schemas/action.ts.
+ */
+export type { Action, PlannedStep } from "../pilot/llm/schemas/index.js"
