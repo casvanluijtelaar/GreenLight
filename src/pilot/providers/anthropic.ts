@@ -72,8 +72,48 @@ export function createAnthropicProvider(baseUrl: string): LLMProvider {
 
 			return content
 		},
-		async generate(_req: GenerateRequest): Promise<unknown> {
-			throw new Error("generate() not implemented for this provider yet (Phase B migration)")
+		async generate(req: GenerateRequest): Promise<unknown> {
+			const systemMessages = req.messages.filter((m) => m.role === "system")
+			const nonSystemMessages = req.messages.filter((m) => m.role !== "system")
+			const systemText = systemMessages.map((m) => m.content).join("\n\n")
+
+			const response = await fetch(endpoint, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-api-key": req.config.apiKey,
+					"anthropic-version": "2023-06-01",
+				},
+				body: JSON.stringify({
+					model: req.config.model,
+					max_tokens: 4096,
+					temperature: 0,
+					...(systemText ? { system: systemText } : {}),
+					messages: nonSystemMessages.map((m) => ({ role: m.role, content: m.content })),
+					tools: [{
+						name: req.schemaName,
+						input_schema: req.schema,
+					}],
+					tool_choice: { type: "tool", name: req.schemaName },
+				}),
+			})
+
+			if (!response.ok) {
+				const body = await response.text()
+				throw new LLMApiError(response.status, body)
+			}
+
+			const data = (await response.json()) as {
+				content: ({ type: "tool_use"; name: string; input: unknown } | { type: string })[]
+			}
+
+			const toolUse = data.content.find(
+				(c): c is { type: "tool_use"; name: string; input: unknown } => c.type === "tool_use",
+			)
+			if (!toolUse) {
+				throw new Error("LLM returned empty response")
+			}
+			return toolUse.input
 		},
 	}
 }

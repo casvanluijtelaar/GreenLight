@@ -22,19 +22,13 @@ export interface ChatMessage {
 }
 
 /**
- * Thrown when the LLM API returns a 4xx or 5xx error.
- * The run loop should catch this and abort the entire test run
- * rather than continuing to the next step or test case.
+ * Re-export of the canonical LLMApiError from the new llm/ subsystem so
+ * `instanceof` checks remain consistent across the migration. The original
+ * class lived here; during Phase B the canonical definition is in
+ * src/pilot/llm/provider.ts. This re-export will be removed in Phase E
+ * along with the rest of this file.
  */
-export class LLMApiError extends Error {
-	constructor(
-		public readonly status: number,
-		message: string,
-	) {
-		super(message)
-		this.name = "LLMApiError"
-	}
-}
+export { LLMApiError } from "../llm/provider.js"
 
 export interface ProviderConfig {
 	apiKey: string

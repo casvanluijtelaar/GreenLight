@@ -145,3 +145,67 @@ describe("createClaudeCodeProvider", () => {
 		).rejects.toThrow("LLM returned empty response")
 	})
 })
+
+describe("claude-code provider generate()", () => {
+	beforeEach(() => {
+		vi.mocked(spawnSync).mockReset()
+	})
+
+	it("passes the JSON schema as --json-schema", async () => {
+		vi.mocked(spawnSync).mockReturnValue({
+			status: 0, stdout: JSON.stringify({ ok: true }), stderr: "",
+			pid: 0, output: [], signal: null,
+		} as ReturnType<typeof spawnSync>)
+		const provider = createClaudeCodeProvider()
+		await provider.generate({
+			messages: [{ role: "system", content: "sys" }, { role: "user", content: "hi" }],
+			schema: { type: "object", properties: { ok: { type: "boolean" } } },
+			schemaName: "thing",
+			config: { apiKey: "", model: "claude-sonnet-4" },
+		})
+		const argv = vi.mocked(spawnSync).mock.calls[0][1] as string[]
+		const idx = argv.indexOf("--json-schema")
+		expect(idx).toBeGreaterThanOrEqual(0)
+		expect(JSON.parse(argv[idx + 1])).toEqual({ type: "object", properties: { ok: { type: "boolean" } } })
+	})
+
+	it("returns parsed JSON from stdout", async () => {
+		vi.mocked(spawnSync).mockReturnValue({
+			status: 0, stdout: JSON.stringify({ ok: true, value: 42 }), stderr: "",
+			pid: 0, output: [], signal: null,
+		} as ReturnType<typeof spawnSync>)
+		const provider = createClaudeCodeProvider()
+		const result = await provider.generate({
+			messages: [{ role: "user", content: "hi" }],
+			schema: {}, schemaName: "thing",
+			config: { apiKey: "", model: "claude-sonnet-4" },
+		})
+		expect(result).toEqual({ ok: true, value: 42 })
+	})
+
+	it("throws LLMApiError on non-zero exit", async () => {
+		vi.mocked(spawnSync).mockReturnValue({
+			status: 1, stdout: "", stderr: "boom",
+			pid: 0, output: [], signal: null,
+		} as ReturnType<typeof spawnSync>)
+		const provider = createClaudeCodeProvider()
+		await expect(provider.generate({
+			messages: [{ role: "user", content: "hi" }],
+			schema: {}, schemaName: "thing",
+			config: { apiKey: "", model: "claude-sonnet-4" },
+		})).rejects.toBeInstanceOf(LLMApiError)
+	})
+
+	it("throws on empty stdout", async () => {
+		vi.mocked(spawnSync).mockReturnValue({
+			status: 0, stdout: "", stderr: "",
+			pid: 0, output: [], signal: null,
+		} as ReturnType<typeof spawnSync>)
+		const provider = createClaudeCodeProvider()
+		await expect(provider.generate({
+			messages: [{ role: "user", content: "hi" }],
+			schema: {}, schemaName: "thing",
+			config: { apiKey: "", model: "claude-sonnet-4" },
+		})).rejects.toThrow(/empty response/)
+	})
+})

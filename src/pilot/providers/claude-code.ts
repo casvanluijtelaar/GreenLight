@@ -77,8 +77,37 @@ export function createClaudeCodeProvider(): LLMProvider {
 
 			return content
 		},
-		async generate(_req: GenerateRequest): Promise<unknown> {
-			throw new Error("generate() not implemented for this provider yet (Phase B migration)")
+		async generate(req: GenerateRequest): Promise<unknown> {
+			const systemMessages = req.messages.filter((m) => m.role === "system")
+			const nonSystemMessages = req.messages.filter((m) => m.role !== "system")
+			const systemText = systemMessages.map((m) => m.content).join("\n\n")
+
+			const result = spawnSync(
+				"claude",
+				[
+					"--model", req.config.model,
+					"--system-prompt", systemText,
+					"--json-schema", JSON.stringify(req.schema),
+					"--output-format", "text",
+					"-p", JSON.stringify(nonSystemMessages),
+				],
+				{
+					encoding: "utf8",
+					maxBuffer: 100 * 1024 * 1024,
+					timeout: 120_000,
+				},
+			)
+
+			if (result.error) {
+				throw new Error(`claude CLI not found. Install and authenticate Claude Code: ${result.error.message}`)
+			}
+			if (result.status !== 0) {
+				throw new LLMApiError(result.status ?? 1, result.stderr || "claude exited with non-zero status")
+			}
+
+			const content = result.stdout.trim()
+			if (!content) throw new Error("LLM returned empty response")
+			return JSON.parse(content)
 		},
 	}
 }

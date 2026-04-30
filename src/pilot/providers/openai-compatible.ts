@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-import type { GenerateRequest } from "../llm/provider.js"
-import { type ChatMessage, type LLMProvider, type ProviderConfig, LLMApiError } from "./types.js"
+import { type GenerateRequest, LLMApiError } from "../llm/provider.js"
+import { type ChatMessage, type LLMProvider, type ProviderConfig } from "./types.js"
 
 /**
  * OpenAI-compatible chat completions provider.
@@ -58,8 +58,43 @@ export function createOpenAICompatibleProvider(baseUrl: string): LLMProvider {
 
 			return content
 		},
-		async generate(_req: GenerateRequest): Promise<unknown> {
-			throw new Error("generate() not implemented for this provider yet (Phase B migration)")
+		async generate(req: GenerateRequest): Promise<unknown> {
+			const response = await fetch(endpoint, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${req.config.apiKey}`,
+				},
+				body: JSON.stringify({
+					model: req.config.model,
+					messages: req.messages,
+					temperature: 0,
+					response_format: {
+						type: "json_schema",
+						json_schema: {
+							name: req.schemaName,
+							schema: req.schema,
+							strict: true,
+						},
+					},
+				}),
+			})
+
+			if (!response.ok) {
+				const body = await response.text()
+				throw new LLMApiError(response.status, body)
+			}
+
+			const data = (await response.json()) as {
+				choices: { message: { content: string } }[]
+			}
+
+			const content = data.choices[0]?.message?.content
+			if (!content) {
+				throw new Error("LLM returned empty response")
+			}
+
+			return JSON.parse(content)
 		},
 	}
 }

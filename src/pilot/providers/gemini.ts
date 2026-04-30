@@ -93,8 +93,53 @@ export function createGeminiProvider(baseUrlOverride?: string): LLMProvider {
 
 			return content
 		},
-		async generate(_req: GenerateRequest): Promise<unknown> {
-			throw new Error("generate() not implemented for this provider yet (Phase B migration)")
+		async generate(req: GenerateRequest): Promise<unknown> {
+			const baseUrl = (baseUrlOverride ?? DEFAULT_BASE_URL).replace(/\/+$/, "")
+			const endpoint = `${baseUrl}/v1beta/models/${req.config.model}:generateContent?key=${req.config.apiKey}`
+
+			const systemMessages = req.messages.filter((m) => m.role === "system")
+			const conversationMessages = req.messages.filter((m) => m.role !== "system")
+
+			const systemInstruction =
+				systemMessages.length > 0
+					? { parts: systemMessages.map((m) => ({ text: m.content })) }
+					: undefined
+
+			const contents = conversationMessages.map((m) => ({
+				role: m.role === "assistant" ? "model" : m.role,
+				parts: [{ text: m.content }],
+			}))
+
+			const body: Record<string, unknown> = {
+				contents,
+				generationConfig: {
+					temperature: 0,
+					responseMimeType: "application/json",
+					responseSchema: req.schema,
+				},
+			}
+			if (systemInstruction) body.systemInstruction = systemInstruction
+
+			const response = await fetch(endpoint, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			})
+
+			if (!response.ok) {
+				const respBody = await response.text()
+				throw new LLMApiError(response.status, respBody)
+			}
+
+			const data = (await response.json()) as {
+				candidates: { content: { parts: { text: string }[] } }[]
+			}
+
+			const text = data.candidates[0]?.content?.parts[0]?.text
+			if (!text) {
+				throw new Error("LLM returned empty response")
+			}
+			return JSON.parse(text)
 		},
 	}
 }
