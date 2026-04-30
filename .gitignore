@@ -40,5 +40,7 @@ npm-debug.log*
 # yarn.lock
 # pnpm-lock.yaml
 
-# claude 
+# claude
 .claude/settings.local.json
+.docs/superpowers
+.worktrees/
