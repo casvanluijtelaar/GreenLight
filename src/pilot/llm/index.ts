@@ -14,6 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-/** Public entry point for the LLM subsystem. Populated as the migration progresses. */
+/** Public entry point for the LLM subsystem. */
 export type { LLMProvider, ChatMessage, ProviderConfig, GenerateRequest } from "./provider.js"
 export { LLMApiError } from "./provider.js"
+export type { LLMClient, LLMClientConfig } from "./client.js"
+export { createLLMClient } from "./client.js"
+export type { Action, PlannedStep, Condition, Compare, Assertion } from "./schemas/index.js"
