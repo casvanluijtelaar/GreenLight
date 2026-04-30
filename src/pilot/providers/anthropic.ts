@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import type { GenerateRequest } from "../llm/provider.js"
 import { type ChatMessage, type LLMProvider, type ProviderConfig, LLMApiError } from "./types.js"
 
 /**
@@ -70,6 +71,9 @@ export function createAnthropicProvider(baseUrl: string): LLMProvider {
 			}
 
 			return content
+		},
+		async generate(_req: GenerateRequest): Promise<unknown> {
+			throw new Error("generate() not implemented for this provider yet (Phase B migration)")
 		},
 	}
 }

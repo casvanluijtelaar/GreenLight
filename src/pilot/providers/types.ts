@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import type { GenerateRequest } from "../llm/provider.js"
+
 export interface ChatMessage {
 	role: "system" | "user" | "assistant"
 	content: string
@@ -44,4 +46,10 @@ export interface LLMProvider {
 		messages: ChatMessage[],
 		config: ProviderConfig,
 	): Promise<string>
+	/**
+	 * Schema-aware generation. Filled in per-provider during Phase B.
+	 * During migration, providers that haven't been migrated yet throw
+	 * "generate not implemented" so any accidental wiring fails loudly.
+	 */
+	generate(req: GenerateRequest): Promise<unknown>
 }

@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { spawnSync } from "node:child_process"
+import type { GenerateRequest } from "../llm/provider.js"
 import {
 	type ChatMessage,
 	type LLMProvider,
@@ -38,7 +39,7 @@ export function createClaudeCodeProvider(): LLMProvider {
 
 			const systemText = systemMessages
 				.map((m) => m.content)
-				.join("\n\n")	
+				.join("\n\n")
 
 			const result = spawnSync(
 				"claude",
@@ -75,6 +76,9 @@ export function createClaudeCodeProvider(): LLMProvider {
 			}
 
 			return content
+		},
+		async generate(_req: GenerateRequest): Promise<unknown> {
+			throw new Error("generate() not implemented for this provider yet (Phase B migration)")
 		},
 	}
 }
