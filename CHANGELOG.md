@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+Structured LLM output migration.
+
+### Changed
+
+- **Internal: structured LLM output.** Replaced text-parsing of LLM responses with native structured outputs (JSON Schema enforced by each provider: OpenAI/OpenRouter `response_format`, Anthropic tool-use forcing, Gemini `responseSchema`, Claude Code `--json-schema`). `Action` and `PlannedStep` are now discriminated unions, removing whole classes of malformed-response bugs and tightening the contract between the LLM and the runtime.
+
 ## [0.8.3] - 2026-04-18
 
 Automatic Playwright browser installation on install.
