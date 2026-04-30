@@ -16,7 +16,7 @@
 
 import type { RunConfig } from "../types.js"
 import { resolveModelConfig } from "../types.js"
-import { createProvider } from "./providers/index.js"
+import { createProvider } from "./llm/providers/index.js"
 import type { LLMClientConfig } from "./llm/index.js"
 
 /** Resolve the API key from environment variables. */

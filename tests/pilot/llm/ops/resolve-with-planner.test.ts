@@ -20,7 +20,7 @@ import type { LLMProvider } from "../../../../src/pilot/llm/provider.js"
 import type { PageState } from "../../../../src/reporter/types.js"
 
 function makeProvider(impl: () => Promise<unknown>): LLMProvider {
-	return { generate: vi.fn(impl), chatCompletion: vi.fn() }
+	return { generate: vi.fn(impl) }
 }
 
 const pageState: PageState = {

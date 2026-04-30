@@ -14,8 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-import { type GenerateRequest, LLMApiError } from "../llm/provider.js"
-import { type ChatMessage, type LLMProvider, type ProviderConfig } from "./types.js"
+import { type GenerateRequest, type LLMProvider, LLMApiError } from "../provider.js"
 
 /**
  * OpenAI-compatible chat completions provider.
@@ -25,39 +24,6 @@ export function createOpenAICompatibleProvider(baseUrl: string): LLMProvider {
 	const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`
 
 	return {
-		async chatCompletion(
-			messages: ChatMessage[],
-			config: ProviderConfig,
-		): Promise<string> {
-			const response = await fetch(endpoint, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${config.apiKey}`,
-				},
-				body: JSON.stringify({
-					model: config.model,
-					messages,
-					temperature: 0,
-				}),
-			})
-
-			if (!response.ok) {
-				const body = await response.text()
-				throw new LLMApiError(response.status, body)
-			}
-
-			const data = (await response.json()) as {
-				choices: { message: { content: string } }[]
-			}
-
-			const content = data.choices[0]?.message?.content
-			if (!content) {
-				throw new Error("LLM returned empty response")
-			}
-
-			return content
-		},
 		async generate(req: GenerateRequest): Promise<unknown> {
 			const response = await fetch(endpoint, {
 				method: "POST",

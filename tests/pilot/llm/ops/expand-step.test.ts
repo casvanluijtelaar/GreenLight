@@ -26,7 +26,7 @@ vi.mock("../../../../src/pilot/form-fields.js", () => ({
 }))
 
 function makeProvider(impl: () => Promise<unknown>): LLMProvider {
-	return { generate: vi.fn(impl), chatCompletion: vi.fn() }
+	return { generate: vi.fn(impl) }
 }
 
 const pageState: PageState = {

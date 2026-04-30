@@ -17,9 +17,8 @@
 /**
  * Provider-agnostic LLM transport interface.
  *
- * Providers implement two methods during the migration: `chatCompletion`
- * (legacy text-in/text-out, will be removed in Phase D) and `generate`
- * (schema-aware, returns parsed JSON).
+ * Providers implement `generate`: schema-aware generation that returns parsed
+ * JSON. The legacy `chatCompletion` method was removed in Phase E.
  */
 
 export interface ChatMessage {
@@ -49,11 +48,6 @@ export interface LLMProvider {
 	 * Claude Code --json-schema).
 	 */
 	generate(req: GenerateRequest): Promise<unknown>
-
-	/**
-	 * Legacy text-in/text-out. Will be removed in Phase D once all ops use `generate`.
-	 */
-	chatCompletion(messages: ChatMessage[], config: ProviderConfig): Promise<string>
 }
 
 export class LLMApiError extends Error {

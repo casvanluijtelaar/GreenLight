@@ -25,7 +25,6 @@ const schema = z.object({ ok: z.boolean() })
 function makeProvider(generateImpl: (req: GenerateRequest) => Promise<unknown>): LLMProvider {
 	return {
 		generate: vi.fn(generateImpl),
-		chatCompletion: vi.fn().mockRejectedValue(new Error("not used")),
 	}
 }
 

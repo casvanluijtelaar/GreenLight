@@ -20,8 +20,6 @@
 
 import type { A11yNode, PageState } from "../reporter/types.js"
 import { formatA11yTree } from "./a11y-parser.js"
-import { SYSTEM_PROMPT } from "./prompts.js"
-import type { ChatMessage } from "./providers/types.js"
 
 /**
  * Format the current local time as an ISO-like string with timezone offset.
@@ -260,13 +258,3 @@ export function buildCompactMessage(
 	return { message: parts.join("\n"), mode: "tree-only" }
 }
 
-/** Build the full messages array for a chat completion request. */
-export function buildMessages(
-	step: string,
-	pageState: PageState,
-): ChatMessage[] {
-	return [
-		{ role: "system", content: SYSTEM_PROMPT },
-		{ role: "user", content: buildUserMessage(step, pageState) },
-	]
-}

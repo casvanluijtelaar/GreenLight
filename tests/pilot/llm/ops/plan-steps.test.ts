@@ -19,7 +19,7 @@ import { planSteps } from "../../../../src/pilot/llm/ops/plan-steps.js"
 import type { LLMProvider } from "../../../../src/pilot/llm/provider.js"
 
 function makeProvider(impl: () => Promise<unknown>): LLMProvider {
-	return { generate: vi.fn(impl), chatCompletion: vi.fn() }
+	return { generate: vi.fn(impl) }
 }
 
 describe("planSteps", () => {

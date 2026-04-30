@@ -50,7 +50,7 @@ import type { StepResult, TestCaseResult } from "../reporter/types.js"
 import type { RunConfig } from "../types.js"
 import { resolveModelConfig } from "../types.js"
 import { globals } from "../globals.js"
-import { LLMApiError } from "../pilot/providers/index.js"
+import { LLMApiError } from "../pilot/llm/providers/index.js"
 
 /** Print a single step result as it completes. */
 function printStepResult(stepResult: StepResult): void {

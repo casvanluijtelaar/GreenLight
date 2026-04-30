@@ -15,13 +15,8 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { spawnSync } from "node:child_process"
-import type { GenerateRequest } from "../llm/provider.js"
-import {
-	type ChatMessage,
-	type LLMProvider,
-	type ProviderConfig,
-	LLMApiError,
-} from "./types.js"
+import type { GenerateRequest, LLMProvider } from "../provider.js"
+import { LLMApiError } from "../provider.js"
 
 /**
  * Provider that delegates to the local `claude` CLI subprocess.
@@ -29,54 +24,6 @@ import {
  */
 export function createClaudeCodeProvider(): LLMProvider {
 	return {
-		async chatCompletion(
-			messages: ChatMessage[],
-			config: ProviderConfig,
-		): Promise<string> {
-			// Extract system message into separate field
-			const systemMessages = messages.filter((m) => m.role === "system")
-			const nonSystemMessages = messages.filter((m) => m.role !== "system")
-
-			const systemText = systemMessages
-				.map((m) => m.content)
-				.join("\n\n")
-
-			const result = spawnSync(
-				"claude",
-				[
-					"--model", config.model,
-					"--system-prompt", systemText,
-					"--output-format", "text",
-					"-p", JSON.stringify(nonSystemMessages),
-				],
-				{
-					encoding: "utf8",
-					maxBuffer: 100 * 1024 * 1024,
-					timeout: 120_000,
-				},
-			)
-
-			if (result.error) {
-				throw new Error(
-					`claude CLI not found. Install and authenticate Claude Code: ${result.error.message}`,
-				)
-			}
-
-			if (result.status !== 0) {
-				throw new LLMApiError(
-					result.status ?? 1,
-					result.stderr || "claude exited with non-zero status",
-				)
-			}
-
-			const content = result.stdout.trim()
-
-			if (!content) {
-				throw new Error("LLM returned empty response")
-			}
-
-			return content
-		},
 		async generate(req: GenerateRequest): Promise<unknown> {
 			const systemMessages = req.messages.filter((m) => m.role === "system")
 			const nonSystemMessages = req.messages.filter((m) => m.role !== "system")

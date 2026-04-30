@@ -25,7 +25,7 @@ import {
 import { attachConsoleCollector } from "../../src/pilot/network.js"
 import { runTestCase } from "../../src/pilot/pilot.js"
 import type { LLMClient } from "../../src/pilot/llm.js"
-import type { PlannedStep } from "../../src/pilot/response-parser.js"
+import type { PlannedStep } from "../../src/pilot/llm/schemas/planned-step.js"
 import type { Action, ConsoleEntry, PageState } from "../../src/reporter/types.js"
 import { DEFAULTS } from "../../src/types.js"
 
@@ -45,8 +45,8 @@ function makeMockLLM(actions: Action[]): LLMClient {
 	return {
 		resetHistory: vi.fn(),
 		planSteps: vi.fn((steps: string[]): Promise<PlannedStep[]> => {
-			// Mock planner returns null for all steps (runtime resolution)
-			return Promise.resolve(steps.map((s) => ({ step: s, action: null })))
+			// Mock planner returns page steps for all steps (runtime resolution)
+			return Promise.resolve(steps.map((s): PlannedStep => ({ kind: "page", step: s })))
 		}),
 		resolveStep: vi.fn((_step: string, _state: PageState) => {
 			const action = actions[callIndex]
@@ -202,7 +202,7 @@ describe("runTestCase", () => {
 				resetHistory: vi.fn(),
 				planSteps: vi.fn(
 					(steps: string[]): Promise<PlannedStep[]> =>
-						Promise.resolve(steps.map((s) => ({ step: s, action: null }))),
+						Promise.resolve(steps.map((s): PlannedStep => ({ kind: "page", step: s }))),
 				),
 				resolveStep: vi.fn(() => {
 					return Promise.reject(new Error("LLM API error 500: Internal Server Error"))

@@ -24,7 +24,6 @@ import { DEFAULTS } from "../../src/types.js"
 function makeProvider(generateImpl: () => Promise<unknown>): LLMProvider {
 	return {
 		generate: vi.fn(generateImpl),
-		chatCompletion: vi.fn().mockRejectedValue(new Error("not used")),
 	}
 }
 

@@ -15,10 +15,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { createGeminiProvider } from "../../../src/pilot/providers/gemini.js"
-import { LLMApiError } from "../../../src/pilot/llm/provider.js"
+import { createOpenAICompatibleProvider } from "../../../../src/pilot/llm/providers/openai-compatible.js"
+import { LLMApiError } from "../../../../src/pilot/llm/provider.js"
 
-describe("gemini provider generate()", () => {
+describe("openai-compatible provider generate()", () => {
 	const originalFetch = globalThis.fetch
 	let fetchMock: ReturnType<typeof vi.fn>
 
@@ -28,77 +28,61 @@ describe("gemini provider generate()", () => {
 	})
 	afterEach(() => { globalThis.fetch = originalFetch })
 
-	it("forwards the JSON Schema as generationConfig.responseSchema with responseMimeType json", async () => {
+	it("forwards the JSON Schema in response_format with strict: true", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
-			candidates: [{ content: { parts: [{ text: JSON.stringify({ ok: true }) }] } }],
+			choices: [{ message: { content: JSON.stringify({ ok: true }) } }],
 		}), { status: 200 }))
-		const provider = createGeminiProvider("https://generativelanguage.googleapis.com")
-		const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] }
+		const provider = createOpenAICompatibleProvider("https://api.example.com/v1")
 		await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema,
+			schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] },
 			schemaName: "thing",
-			config: { apiKey: "k", model: "gemini-1.5-pro" },
+			config: { apiKey: "k", model: "m" },
 		})
 		expect(fetchMock).toHaveBeenCalledTimes(1)
 		const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
-		expect(body.generationConfig).toMatchObject({
-			responseMimeType: "application/json",
-			responseSchema: schema,
+		expect(body.response_format).toEqual({
+			type: "json_schema",
+			json_schema: {
+				name: "thing",
+				schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] },
+				strict: true,
+			},
 		})
 	})
 
 	it("returns the parsed JSON object", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
-			candidates: [{ content: { parts: [{ text: JSON.stringify({ ok: true, value: 42 }) }] } }],
+			choices: [{ message: { content: JSON.stringify({ ok: true }) } }],
 		}), { status: 200 }))
-		const provider = createGeminiProvider("https://generativelanguage.googleapis.com")
+		const provider = createOpenAICompatibleProvider("https://api.example.com/v1")
 		const result = await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
 			schema: {}, schemaName: "thing",
-			config: { apiKey: "k", model: "gemini-1.5-pro" },
+			config: { apiKey: "k", model: "m" },
 		})
-		expect(result).toEqual({ ok: true, value: 42 })
-	})
-
-	it("forwards system messages as systemInstruction", async () => {
-		fetchMock.mockResolvedValue(new Response(JSON.stringify({
-			candidates: [{ content: { parts: [{ text: JSON.stringify({ ok: true }) }] } }],
-		}), { status: 200 }))
-		const provider = createGeminiProvider("https://generativelanguage.googleapis.com")
-		await provider.generate({
-			messages: [
-				{ role: "system", content: "be helpful" },
-				{ role: "user", content: "hi" },
-			],
-			schema: {}, schemaName: "thing",
-			config: { apiKey: "k", model: "gemini-1.5-pro" },
-		})
-		const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
-		expect(body.systemInstruction).toEqual({ parts: [{ text: "be helpful" }] })
-		expect(body.contents).toHaveLength(1)
-		expect(body.contents[0]).toEqual({ role: "user", parts: [{ text: "hi" }] })
+		expect(result).toEqual({ ok: true })
 	})
 
 	it("throws LLMApiError on non-2xx", async () => {
 		fetchMock.mockResolvedValue(new Response("nope", { status: 401 }))
-		const provider = createGeminiProvider("https://generativelanguage.googleapis.com")
+		const provider = createOpenAICompatibleProvider("https://api.example.com/v1")
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
 			schema: {}, schemaName: "thing",
-			config: { apiKey: "k", model: "gemini-1.5-pro" },
+			config: { apiKey: "k", model: "m" },
 		})).rejects.toBeInstanceOf(LLMApiError)
 	})
 
 	it("throws on empty content", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
-			candidates: [{ content: { parts: [{ text: "" }] } }],
+			choices: [{ message: { content: "" } }],
 		}), { status: 200 }))
-		const provider = createGeminiProvider("https://generativelanguage.googleapis.com")
+		const provider = createOpenAICompatibleProvider("https://api.example.com/v1")
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
 			schema: {}, schemaName: "thing",
-			config: { apiKey: "k", model: "gemini-1.5-pro" },
+			config: { apiKey: "k", model: "m" },
 		})).rejects.toThrow(/empty response/)
 	})
 })
