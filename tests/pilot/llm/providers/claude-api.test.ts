@@ -15,10 +15,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { createAnthropicProvider } from "../../../../src/pilot/llm/providers/anthropic.js"
+import { createClaudeApiProvider } from "../../../../src/pilot/llm/providers/claude-api.js"
 import { LLMApiError } from "../../../../src/pilot/llm/provider.js"
 
-describe("anthropic provider generate()", () => {
+describe("claude-api provider generate()", () => {
 	const originalFetch = globalThis.fetch
 	let fetchMock: ReturnType<typeof vi.fn>
 
@@ -32,7 +32,7 @@ describe("anthropic provider generate()", () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
 			content: [{ type: "tool_use", name: "thing", input: { ok: true } }],
 		}), { status: 200 }))
-		const provider = createAnthropicProvider("https://api.anthropic.com")
+		const provider = createClaudeApiProvider("https://api.anthropic.com")
 		const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] }
 		await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
@@ -53,7 +53,7 @@ describe("anthropic provider generate()", () => {
 				{ type: "tool_use", name: "thing", input: { ok: true, value: 42 } },
 			],
 		}), { status: 200 }))
-		const provider = createAnthropicProvider("https://api.anthropic.com")
+		const provider = createClaudeApiProvider("https://api.anthropic.com")
 		const result = await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
 			schema: {}, schemaName: "thing",
@@ -66,7 +66,7 @@ describe("anthropic provider generate()", () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
 			content: [{ type: "tool_use", name: "thing", input: { ok: true } }],
 		}), { status: 200 }))
-		const provider = createAnthropicProvider("https://api.anthropic.com")
+		const provider = createClaudeApiProvider("https://api.anthropic.com")
 		await provider.generate({
 			messages: [
 				{ role: "system", content: "be helpful" },
@@ -83,7 +83,7 @@ describe("anthropic provider generate()", () => {
 
 	it("throws LLMApiError on non-2xx", async () => {
 		fetchMock.mockResolvedValue(new Response("nope", { status: 401 }))
-		const provider = createAnthropicProvider("https://api.anthropic.com")
+		const provider = createClaudeApiProvider("https://api.anthropic.com")
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
 			schema: {}, schemaName: "thing",
@@ -95,7 +95,7 @@ describe("anthropic provider generate()", () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
 			content: [{ type: "text", text: "I refuse" }],
 		}), { status: 200 }))
-		const provider = createAnthropicProvider("https://api.anthropic.com")
+		const provider = createClaudeApiProvider("https://api.anthropic.com")
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
 			schema: {}, schemaName: "thing",

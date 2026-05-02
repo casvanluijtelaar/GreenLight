@@ -53,7 +53,7 @@ program
 	.option("--llm-base-url <url>", "base URL for the LLM API (override)")
 	.option(
 		"--provider <name>",
-		"LLM provider: openrouter, openai, gemini, claude, or claude-code",
+		"LLM provider: openrouter, openai, gemini, claude-api, or claude-cli",
 	)
 	.option(
 		"-d, --deployment <name>",
@@ -176,13 +176,13 @@ function parseProvider(value: string): Provider {
 		value === "openrouter" ||
 		value === "openai" ||
 		value === "gemini" ||
-		value === "claude" ||
-		value === "claude-code"
+		value === "claude-api" ||
+		value === "claude-cli"
 	) {
 		return value
 	}
 	console.error(
-		`Invalid provider "${value}". Must be openrouter, openai, gemini, claude, or claude-code.`,
+		`Invalid provider "${value}". Must be openrouter, openai, gemini, claude-api, or claude-cli.`,
 	)
 	process.exit(1)
 }

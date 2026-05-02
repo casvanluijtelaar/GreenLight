@@ -18,9 +18,9 @@ import type { GenerateRequest, LLMProvider } from "../provider.js"
 import { LLMApiError } from "../provider.js"
 
 /**
- * Native Anthropic Messages API provider.
+ * Claude API provider (Anthropic Messages API).
  */
-export function createAnthropicProvider(baseUrl: string): LLMProvider {
+export function createClaudeApiProvider(baseUrl: string): LLMProvider {
 	const endpoint = `${baseUrl.replace(/\/+$/, "")}/v1/messages`
 
 	return {

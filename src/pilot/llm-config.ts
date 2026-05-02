@@ -33,8 +33,8 @@ export function resolveLLMConfig(runConfig: RunConfig): LLMClientConfig {
 	const modelConfig = resolveModelConfig(runConfig.model)
 	const provider = createProvider(runConfig.provider, runConfig.llmBaseUrl)
 	return {
-		// claude-code uses the local claude CLI (OAuth), not an API key.
-		apiKey: runConfig.provider === "claude-code" ? "" : resolveApiKey(),
+		// claude-cli uses the local claude CLI (OAuth), not an API key.
+		apiKey: runConfig.provider === "claude-cli" ? "" : resolveApiKey(),
 		provider,
 		plannerModel: modelConfig.planner,
 		pilotModel: modelConfig.pilot,

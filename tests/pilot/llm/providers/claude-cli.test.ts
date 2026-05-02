@@ -15,7 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { createClaudeCodeProvider } from "../../../../src/pilot/llm/providers/claude-code.js"
+import { createClaudeCliProvider } from "../../../../src/pilot/llm/providers/claude-cli.js"
 import { LLMApiError } from "../../../../src/pilot/llm/provider.js"
 
 vi.mock("node:child_process", () => ({
@@ -24,7 +24,7 @@ vi.mock("node:child_process", () => ({
 
 import { spawnSync } from "node:child_process"
 
-describe("claude-code provider generate()", () => {
+describe("claude-cli provider generate()", () => {
 	beforeEach(() => {
 		vi.mocked(spawnSync).mockReset()
 	})
@@ -34,7 +34,7 @@ describe("claude-code provider generate()", () => {
 			status: 0, stdout: JSON.stringify({ ok: true }), stderr: "",
 			pid: 0, output: [], signal: null,
 		} as ReturnType<typeof spawnSync>)
-		const provider = createClaudeCodeProvider()
+		const provider = createClaudeCliProvider()
 		await provider.generate({
 			messages: [{ role: "system", content: "sys" }, { role: "user", content: "hi" }],
 			schema: { type: "object", properties: { ok: { type: "boolean" } } },
@@ -52,7 +52,7 @@ describe("claude-code provider generate()", () => {
 			status: 0, stdout: JSON.stringify({ ok: true, value: 42 }), stderr: "",
 			pid: 0, output: [], signal: null,
 		} as ReturnType<typeof spawnSync>)
-		const provider = createClaudeCodeProvider()
+		const provider = createClaudeCliProvider()
 		const result = await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
 			schema: {}, schemaName: "thing",
@@ -66,7 +66,7 @@ describe("claude-code provider generate()", () => {
 			status: 1, stdout: "", stderr: "boom",
 			pid: 0, output: [], signal: null,
 		} as ReturnType<typeof spawnSync>)
-		const provider = createClaudeCodeProvider()
+		const provider = createClaudeCliProvider()
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
 			schema: {}, schemaName: "thing",
@@ -79,7 +79,7 @@ describe("claude-code provider generate()", () => {
 			status: 0, stdout: "", stderr: "",
 			pid: 0, output: [], signal: null,
 		} as ReturnType<typeof spawnSync>)
-		const provider = createClaudeCodeProvider()
+		const provider = createClaudeCliProvider()
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
 			schema: {}, schemaName: "thing",

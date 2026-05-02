@@ -17,9 +17,9 @@
 import type { Provider } from "../../../types.js"
 import type { LLMProvider } from "../provider.js"
 import { createOpenAICompatibleProvider } from "./openai-compatible.js"
-import { createAnthropicProvider } from "./anthropic.js"
+import { createClaudeApiProvider } from "./claude-api.js"
 import { createGeminiProvider } from "./gemini.js"
-import { createClaudeCodeProvider } from "./claude-code.js"
+import { createClaudeCliProvider } from "./claude-cli.js"
 
 export type { ChatMessage, LLMProvider, ProviderConfig, GenerateRequest } from "../provider.js"
 export { LLMApiError } from "../provider.js"
@@ -42,12 +42,12 @@ export function createProvider(
 			return createOpenAICompatibleProvider(
 				baseUrlOverride ?? "https://api.openai.com/v1",
 			)
-		case "claude":
-			return createAnthropicProvider(
+		case "claude-api":
+			return createClaudeApiProvider(
 				baseUrlOverride ?? "https://api.anthropic.com",
 			)
-		case "claude-code":
-			return createClaudeCodeProvider()
+		case "claude-cli":
+			return createClaudeCliProvider()
 		case "gemini":
 			return createGeminiProvider(baseUrlOverride)
 		default: {

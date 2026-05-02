@@ -617,8 +617,8 @@ GreenLight supports five LLM providers with native API integrations:
 | [OpenRouter](https://openrouter.ai) | `openrouter` (default) | Access all models through a single API |
 | [OpenAI](https://platform.openai.com) | `openai` | GPT-4o, GPT-4o-mini, etc. |
 | [Google Gemini](https://ai.google.dev) | `gemini` | Gemini 2.5 Flash, Pro, etc. |
-| [Anthropic Claude](https://console.anthropic.com) | `claude` | Claude Sonnet, Haiku, etc. |
-| Claude Code CLI | `claude-code` | Uses the local Claude Code CLI as a subprocess. No API key needed. |
+| [Anthropic Claude API](https://console.anthropic.com) | `claude-api` | Claude Sonnet, Haiku, etc. via the Anthropic Messages API. |
+| Claude Code CLI | `claude-cli` | Uses the local Claude Code CLI as a subprocess. No API key needed. |
 
 Set the provider in `greenlight.yaml` or via CLI:
 

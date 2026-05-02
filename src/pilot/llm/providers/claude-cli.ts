@@ -22,7 +22,7 @@ import { LLMApiError } from "../provider.js"
  * Provider that delegates to the local `claude` CLI subprocess.
  * Requires Claude Code to be installed and authenticated. No API key needed.
  */
-export function createClaudeCodeProvider(): LLMProvider {
+export function createClaudeCliProvider(): LLMProvider {
 	return {
 		async generate(req: GenerateRequest): Promise<unknown> {
 			const systemMessages = req.messages.filter((m) => m.role === "system")

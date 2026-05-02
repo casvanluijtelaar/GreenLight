@@ -174,14 +174,14 @@ describe("resolveLLMConfig", () => {
 		expect(config.pilotModel).toBe("openai/gpt-4o-mini")
 	})
 
-	it("does not require an API key when provider is claude-code", () => {
+	it("does not require an API key when provider is claude-cli", () => {
 		delete process.env.LLM_API_KEY
 		delete process.env.OPENROUTER_API_KEY
 
 		const runConfig = {
 			...DEFAULTS,
 			suiteFiles: [],
-			provider: "claude-code",
+			provider: "claude-cli",
 			model: "anthropic/claude-sonnet-4",
 		} as RunConfig
 
