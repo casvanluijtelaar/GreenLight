@@ -15,7 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { createLLMClient, resolveApiKey, resolveLLMConfig } from "../../src/pilot/llm.js"
+import { createLLMClient, resolveApiKey, resolveLLMConfig } from "../../src/pilot/llm/index.js"
 import type { LLMProvider } from "../../src/pilot/llm/provider.js"
 import type { PageState } from "../../src/reporter/types.js"
 import type { RunConfig } from "../../src/types.js"

@@ -31,7 +31,7 @@ import type {
 	StepTiming,
 	TestCaseResult,
 } from "../reporter/types.js"
-import type { LLMClient } from "./llm.js"
+import type { LLMClient } from "./llm/index.js"
 import { fixPlanOrdering, validatePlanReferences } from "./llm/plan-utils.js"
 import { resolveDatePick } from "./datepick.js"
 import { stepNeedsRandom, injectRandomValues, replaceWithPlaceholders, type RandomValues } from "./random.js"

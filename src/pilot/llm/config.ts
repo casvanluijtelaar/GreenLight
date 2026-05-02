@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-import type { RunConfig } from "../types.js"
-import { resolveModelConfig } from "../types.js"
-import { createProvider } from "./llm/providers/index.js"
-import type { LLMClientConfig } from "./llm/index.js"
+import type { RunConfig } from "../../types.js"
+import { resolveModelConfig } from "../../types.js"
+import { createProvider } from "./providers/index.js"
+import type { LLMClientConfig } from "./index.js"
 
 /** Resolve the API key from environment variables. */
 export function resolveApiKey(): string {

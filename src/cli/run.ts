@@ -31,7 +31,7 @@ import {
 	resolveLLMConfig,
 	createLLMClient,
 	type LLMClient,
-} from "../pilot/llm.js"
+} from "../pilot/llm/index.js"
 import { runTestCase } from "../pilot/pilot.js"
 import { computeTestHash, slugify } from "../planner/hasher.js"
 import {

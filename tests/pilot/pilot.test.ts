@@ -24,7 +24,7 @@ import {
 } from "../../src/browser/browser.js"
 import { attachConsoleCollector } from "../../src/pilot/network.js"
 import { runTestCase } from "../../src/pilot/pilot.js"
-import type { LLMClient } from "../../src/pilot/llm.js"
+import type { LLMClient } from "../../src/pilot/llm/index.js"
 import type { PlannedStep } from "../../src/pilot/llm/schemas/planned-step.js"
 import type { Action, ConsoleEntry, PageState } from "../../src/reporter/types.js"
 import { DEFAULTS } from "../../src/types.js"
