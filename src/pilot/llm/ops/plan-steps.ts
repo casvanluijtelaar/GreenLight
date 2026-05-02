@@ -14,13 +14,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import { z } from "zod"
 import type { ChatMessage, LLMProvider, ProviderConfig } from "../provider.js"
 import { complete } from "../complete.js"
-import {
-	planStepsResponseSchema,
-	PLAN_STEPS_SCHEMA_NAME,
-	type PlannedStep,
-} from "../schemas/index.js"
+import { plannedStepSchema, type PlannedStep } from "../schemas/index.js"
+
+/**
+ * JSON shape the LLM returns for a `planSteps` call: an array of planned
+ * steps wrapping the original test input into structured plan steps.
+ */
+export const planStepsResponseSchema = z.object({
+	steps: z.array(plannedStepSchema),
+})
+
+/** Stable name forwarded to providers (OpenAI tool name, Anthropic tool name). */
+export const PLAN_STEPS_SCHEMA_NAME = "plan_steps_response"
+
+/** Inferred TypeScript type for {@link planStepsResponseSchema}. */
+export type PlanStepsResponse = z.infer<typeof planStepsResponseSchema>
 
 const PLAN_SYSTEM_PROMPT = `You are converting natural-language E2E test steps into a structured plan. A single input step may produce multiple output steps.
 

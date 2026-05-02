@@ -14,16 +14,29 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import { z } from "zod"
 import type { ChatMessage, LLMProvider, ProviderConfig } from "../provider.js"
 import { complete } from "../complete.js"
-import {
-	evaluateConditionResponseSchema,
-	EVALUATE_CONDITION_SCHEMA_NAME,
-} from "../schemas/index.js"
 import { SYSTEM_PROMPT } from "./resolve-step.js"
 import { buildUserMessage, buildCompactMessage } from "../../message-builder.js"
 import { formatA11yTree } from "../../a11y-parser.js"
 import type { PageState } from "../../../reporter/types.js"
+
+/**
+ * JSON shape the LLM returns for an `evaluateCondition` call: a boolean
+ * verdict plus an optional `reason` explaining the decision (useful for
+ * debugging conditional branch selection).
+ */
+export const evaluateConditionResponseSchema = z.object({
+	result: z.boolean(),
+	reason: z.string().optional(),
+})
+
+/** Stable name forwarded to providers (OpenAI tool name, Anthropic tool name). */
+export const EVALUATE_CONDITION_SCHEMA_NAME = "evaluate_condition_response"
+
+/** Inferred TypeScript type for {@link evaluateConditionResponseSchema}. */
+export type EvaluateConditionResponse = z.infer<typeof evaluateConditionResponseSchema>
 
 export interface EvaluateConditionDeps {
 	provider: LLMProvider

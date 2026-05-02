@@ -17,13 +17,29 @@
 import { z } from "zod"
 
 /**
- * Condition for conditional planned steps (IF_VISIBLE / IF_CONTAINS / IF_URL).
- * Mirrors src/pilot/conditions.ts::Condition. The runtime evaluator in
- * conditions.ts will switch on `type`.
+ * Condition for conditional planned steps. The planner emits one of these
+ * when wrapping atomic actions in if/then/else logic, mirroring the legacy
+ * `IF_VISIBLE` / `IF_CONTAINS` / `IF_URL` DSL keywords.
+ *
+ * The runtime evaluator in `src/pilot/conditions.ts::evaluateCondition`
+ * switches on `type` to decide how to verify the condition against the live
+ * page state.
  */
 export const conditionSchema = z.object({
+	/**
+	 * Which kind of check to perform:
+	 * - `visible`: an element matching `target` is visibly rendered on the page.
+	 * - `contains`: the page text contains `target` as a substring.
+	 * - `url`: the current URL contains `target` as a substring.
+	 */
 	type: z.enum(["visible", "contains", "url"]),
+	/**
+	 * What to look for. The interpretation depends on `type`:
+	 * a free-form description of the element for `visible`, or a substring
+	 * for `contains` / `url`.
+	 */
 	target: z.string(),
 })
 
+/** A condition the runtime evaluates against the live page state. */
 export type Condition = z.infer<typeof conditionSchema>

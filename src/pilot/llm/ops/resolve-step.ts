@@ -14,19 +14,31 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import { z } from "zod"
 import type { ChatMessage, LLMProvider, ProviderConfig } from "../provider.js"
 import { LLMApiError } from "../provider.js"
 import { complete } from "../complete.js"
-import {
-	resolveStepResponseSchema,
-	RESOLVE_STEP_SCHEMA_NAME,
-	type Action,
-} from "../schemas/index.js"
+import { actionSchema, type Action } from "../schemas/index.js"
 import { pruneHistory } from "../history.js"
 import { buildUserMessage, buildCompactMessage } from "../../message-builder.js"
 import { formatA11yTree } from "../../a11y-parser.js"
 import type { PageState } from "../../../reporter/types.js"
 import { globals } from "../../../globals.js"
+
+/**
+ * JSON shape the LLM returns for a `resolveStep` call: a single Action plus
+ * an optional `thinking` field for the model's reasoning.
+ */
+export const resolveStepResponseSchema = z.object({
+	thinking: z.string().optional(),
+	action: actionSchema,
+})
+
+/** Stable name forwarded to providers (OpenAI tool name, Anthropic tool name). */
+export const RESOLVE_STEP_SCHEMA_NAME = "resolve_step_response"
+
+/** Inferred TypeScript type for {@link resolveStepResponseSchema}. */
+export type ResolveStepResponse = z.infer<typeof resolveStepResponseSchema>
 
 export const SYSTEM_PROMPT = `You are The Pilot, an AI agent that executes end-to-end tests in a web browser.
 

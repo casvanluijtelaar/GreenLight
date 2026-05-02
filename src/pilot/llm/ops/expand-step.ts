@@ -14,18 +14,30 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import { z } from "zod"
 import type { Page } from "playwright"
 import type { ChatMessage, LLMProvider, ProviderConfig } from "../provider.js"
 import { complete } from "../complete.js"
-import {
-	expandStepResponseSchema,
-	EXPAND_STEP_SCHEMA_NAME,
-	type PlannedStep,
-} from "../schemas/index.js"
+import { plannedStepSchema, type PlannedStep } from "../schemas/index.js"
 import { formatA11yTree } from "../../a11y-parser.js"
 import { captureFormFields, formatFormFields } from "../../form-fields.js"
 import type { PageState } from "../../../reporter/types.js"
 import { globals } from "../../../globals.js"
+
+/**
+ * JSON shape the LLM returns for an `expandStep` call: the array of atomic
+ * sub-steps that decompose the original compound step (e.g. "fill the form")
+ * against the live page state.
+ */
+export const expandStepResponseSchema = z.object({
+	steps: z.array(plannedStepSchema),
+})
+
+/** Stable name forwarded to providers (OpenAI tool name, Anthropic tool name). */
+export const EXPAND_STEP_SCHEMA_NAME = "expand_step_response"
+
+/** Inferred TypeScript type for {@link expandStepResponseSchema}. */
+export type ExpandStepResponse = z.infer<typeof expandStepResponseSchema>
 
 const EXPAND_SYSTEM_PROMPT = `You are expanding a high-level test step into concrete atomic actions based on the actual form fields visible on the page.
 

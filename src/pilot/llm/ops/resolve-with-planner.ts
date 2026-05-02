@@ -16,12 +16,12 @@
 
 import type { ChatMessage, LLMProvider, ProviderConfig } from "../provider.js"
 import { complete } from "../complete.js"
+import { type Action } from "../schemas/index.js"
 import {
+	SYSTEM_PROMPT,
 	resolveStepResponseSchema,
 	RESOLVE_STEP_SCHEMA_NAME,
-	type Action,
-} from "../schemas/index.js"
-import { SYSTEM_PROMPT } from "./resolve-step.js"
+} from "./resolve-step.js"
 import { buildUserMessage } from "../../message-builder.js"
 import type { PageState } from "../../../reporter/types.js"
 
