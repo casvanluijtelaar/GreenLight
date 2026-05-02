@@ -14,12 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { createLLMClient, resolveApiKey, resolveLLMConfig } from "../../src/pilot/llm/index.js"
-import type { LLMProvider } from "../../src/pilot/llm/provider.js"
-import type { PageState } from "../../src/reporter/types.js"
-import type { RunConfig } from "../../src/types.js"
-import { DEFAULTS } from "../../src/types.js"
+import { describe, it, expect, vi } from "vitest"
+import { createLLMClient } from "../../../src/pilot/llm/index.js"
+import type { LLMProvider } from "../../../src/pilot/llm/provider.js"
+import type { PageState } from "../../../src/reporter/types.js"
 
 function makeProvider(generateImpl: () => Promise<unknown>): LLMProvider {
 	return {
@@ -79,7 +77,7 @@ describe("createLLMClient (facade)", () => {
 	})
 
 	it("LLM API errors propagate to the caller", async () => {
-		const { LLMApiError } = await import("../../src/pilot/llm/provider.js")
+		const { LLMApiError } = await import("../../../src/pilot/llm/provider.js")
 		const provider = makeProvider(async () => { throw new LLMApiError(500, "boom") })
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
 		await expect(client.resolveStep("step", pageState)).rejects.toBeInstanceOf(LLMApiError)
@@ -99,94 +97,5 @@ describe("createLLMClient (facade)", () => {
 		// Second call should include history from first call: system + user1 + assistant1 + user2 = 4
 		const secondCall = (provider.generate as ReturnType<typeof vi.fn>).mock.calls[1][0]
 		expect(secondCall.messages).toHaveLength(4)
-	})
-})
-
-describe("resolveApiKey", () => {
-	const originalEnv = process.env
-
-	beforeEach(() => {
-		process.env = { ...originalEnv }
-		delete process.env.OPENROUTER_API_KEY
-		delete process.env.LLM_API_KEY
-	})
-
-	afterEach(() => {
-		process.env = originalEnv
-	})
-
-	it("reads LLM_API_KEY", () => {
-		process.env.LLM_API_KEY = "sk-generic"
-		expect(resolveApiKey()).toBe("sk-generic")
-	})
-
-	it("falls back to OPENROUTER_API_KEY", () => {
-		process.env.OPENROUTER_API_KEY = "sk-or-test"
-		expect(resolveApiKey()).toBe("sk-or-test")
-	})
-
-	it("prefers LLM_API_KEY over OPENROUTER_API_KEY", () => {
-		process.env.LLM_API_KEY = "sk-gen"
-		process.env.OPENROUTER_API_KEY = "sk-or"
-		expect(resolveApiKey()).toBe("sk-gen")
-	})
-
-	it("throws when no key is set", () => {
-		expect(() => resolveApiKey()).toThrow("No API key found")
-	})
-})
-
-describe("resolveLLMConfig", () => {
-	const originalEnv = process.env
-
-	beforeEach(() => {
-		process.env = { ...originalEnv }
-		process.env.LLM_API_KEY = "sk-test"
-	})
-
-	afterEach(() => {
-		process.env = originalEnv
-	})
-
-	it("resolves config from RunConfig", () => {
-		const runConfig: RunConfig = {
-			...DEFAULTS,
-			suiteFiles: [],
-			model: "openai/gpt-4o",
-			provider: "openrouter",
-		}
-		const config = resolveLLMConfig(runConfig)
-		expect(config.apiKey).toBe("sk-test")
-		expect(config.plannerModel).toBe("openai/gpt-4o")
-		expect(config.pilotModel).toBe("openai/gpt-4o")
-		expect(config.provider).toBeDefined()
-	})
-
-	it("resolves ModelConfig with different planner/pilot", () => {
-		const runConfig: RunConfig = {
-			...DEFAULTS,
-			suiteFiles: [],
-			model: { planner: "openai/gpt-4o", pilot: "openai/gpt-4o-mini" },
-			provider: "openai",
-		}
-		const config = resolveLLMConfig(runConfig)
-		expect(config.plannerModel).toBe("openai/gpt-4o")
-		expect(config.pilotModel).toBe("openai/gpt-4o-mini")
-	})
-
-	it("does not require an API key when provider is claude-cli", () => {
-		delete process.env.LLM_API_KEY
-		delete process.env.OPENROUTER_API_KEY
-
-		const runConfig = {
-			...DEFAULTS,
-			suiteFiles: [],
-			provider: "claude-cli",
-			model: "anthropic/claude-sonnet-4",
-		} as RunConfig
-
-		expect(() => resolveLLMConfig(runConfig)).not.toThrow()
-		const config = resolveLLMConfig(runConfig)
-		expect(config.apiKey).toBe("")
 	})
 })
