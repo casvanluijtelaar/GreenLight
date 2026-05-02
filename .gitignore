@@ -24,6 +24,7 @@ Thumbs.db
 results.json
 report.html
 .playwright-cli/
+coverage/
 
 # GreenLight cached plans
 .greenlight/

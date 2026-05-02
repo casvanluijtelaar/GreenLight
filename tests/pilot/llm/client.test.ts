@@ -15,9 +15,15 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { describe, it, expect, vi } from "vitest"
+import type { Page } from "playwright"
 import { createLLMClient } from "../../../src/pilot/llm/index.js"
 import type { LLMProvider } from "../../../src/pilot/llm/provider.js"
 import type { PageState } from "../../../src/reporter/types.js"
+
+vi.mock("../../../src/pilot/form-fields.js", () => ({
+	captureFormFields: vi.fn(async () => []),
+	formatFormFields: vi.fn(() => "(no form fields)"),
+}))
 
 function makeProvider(generateImpl: () => Promise<unknown>): LLMProvider {
 	return {
@@ -81,6 +87,22 @@ describe("createLLMClient (facade)", () => {
 		const provider = makeProvider(async () => { throw new LLMApiError(500, "boom") })
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
 		await expect(client.resolveStep("step", pageState)).rejects.toBeInstanceOf(LLMApiError)
+	})
+
+	it("expandStep returns the sub-steps from the provider response", async () => {
+		const provider = makeProvider(async () => ({
+			steps: [
+				{ kind: "atomic", step: "type name", action: { action: "type", ref: "e1", value: "Alice" } },
+				{ kind: "atomic", step: "click submit", action: { action: "click", ref: "e2" } },
+			],
+		}))
+		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
+
+		const steps = await client.expandStep("fill the form", pageState, {} as Page)
+
+		expect(steps).toHaveLength(2)
+		expect(steps[0]).toMatchObject({ kind: "atomic", step: "type name" })
+		expect(provider.generate).toHaveBeenCalledTimes(1)
 	})
 
 	it("accumulates conversation history across resolveStep calls", async () => {
