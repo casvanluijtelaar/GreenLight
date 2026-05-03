@@ -44,8 +44,8 @@ export interface LLMProvider {
 	/**
 	 * Schema-aware generation. Returns raw JSON; validation happens above
 	 * (in `complete<T>`). The provider applies its native structured-output
-	 * mechanism (OpenAI response_format, Anthropic tool-use, Gemini responseSchema,
-	 * Claude Code --json-schema).
+	 * mechanism (OpenAI response_format, Anthropic tool-use, Gemini
+	 * responseJsonSchema, Claude Code --json-schema).
 	 */
 	generate(req: GenerateRequest): Promise<unknown>
 }

@@ -28,7 +28,7 @@ describe("gemini provider generate()", () => {
 	})
 	afterEach(() => { globalThis.fetch = originalFetch })
 
-	it("forwards the JSON Schema as generationConfig.responseSchema with responseMimeType json", async () => {
+	it("forwards the JSON Schema as generationConfig.responseJsonSchema with responseMimeType json", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
 			candidates: [{ content: { parts: [{ text: JSON.stringify({ ok: true }) }] } }],
 		}), { status: 200 }))
@@ -44,7 +44,7 @@ describe("gemini provider generate()", () => {
 		const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
 		expect(body.generationConfig).toMatchObject({
 			responseMimeType: "application/json",
-			responseSchema: schema,
+			responseJsonSchema: schema,
 		})
 	})
 

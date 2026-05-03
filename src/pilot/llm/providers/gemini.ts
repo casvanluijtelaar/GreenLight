@@ -41,12 +41,16 @@ export function createGeminiProvider(baseUrlOverride?: string): LLMProvider {
 				parts: [{ text: m.content }],
 			}))
 
+			// Use `responseJsonSchema` (full JSON Schema) rather than the older
+			// `responseSchema` (limited OpenAPI 3.0 subset). The schemas we send
+			// include $ref / additionalProperties / definitions — all rejected by
+			// `responseSchema` but accepted by `responseJsonSchema`.
 			const body: Record<string, unknown> = {
 				contents,
 				generationConfig: {
 					temperature: 0,
 					responseMimeType: "application/json",
-					responseSchema: req.schema,
+					responseJsonSchema: req.schema,
 				},
 			}
 			if (systemInstruction) body.systemInstruction = systemInstruction
