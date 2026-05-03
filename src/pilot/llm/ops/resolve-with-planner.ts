@@ -21,6 +21,7 @@ import {
 	SYSTEM_PROMPT,
 	resolveStepResponseSchema,
 	RESOLVE_STEP_SCHEMA_NAME,
+	parseResolveStepResponse,
 } from "./resolve-step.js"
 import { buildUserMessage } from "../../message-builder.js"
 import type { PageState } from "../../../reporter/types.js"
@@ -50,7 +51,7 @@ export async function resolveStepWithPlanner(
 		{ role: "user", content: userMessage },
 	]
 
-	const response = await complete({
+	const raw = await complete({
 		provider: deps.provider,
 		config: deps.config,
 		messages,
@@ -58,5 +59,5 @@ export async function resolveStepWithPlanner(
 		schemaName: RESOLVE_STEP_SCHEMA_NAME,
 	})
 
-	return response.action
+	return parseResolveStepResponse(raw).action
 }

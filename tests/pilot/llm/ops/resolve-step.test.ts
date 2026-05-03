@@ -35,7 +35,7 @@ const pageState: PageState = {
 
 describe("resolveStep", () => {
 	it("returns the action and updates history on a fresh call", async () => {
-		const provider = makeProvider(async () => ({ action: { action: "click", ref: "e3" } }))
+		const provider = makeProvider(async () => ({ action: "click", ref: "e3" }))
 		const result = await resolveStep("click submit", pageState, {
 			provider, config: { apiKey: "k", model: "m" },
 			history: [], prevPageState: null, prevFormattedTree: "",
@@ -61,7 +61,7 @@ describe("resolveStep", () => {
 	})
 
 	it("forwards the resolveStepResponseSchema name", async () => {
-		const provider = makeProvider(async () => ({ action: { action: "click", ref: "e1" } }))
+		const provider = makeProvider(async () => ({ action: "click", ref: "e1" }))
 		await resolveStep("click", pageState, {
 			provider, config: { apiKey: "k", model: "m" },
 			history: [], prevPageState: null, prevFormattedTree: "", cache: new Map(),

@@ -18,27 +18,60 @@ import { z } from "zod"
 import type { ChatMessage, LLMProvider, ProviderConfig } from "../provider.js"
 import { LLMApiError } from "../provider.js"
 import { complete } from "../complete.js"
-import { actionSchema, type Action } from "../schemas/index.js"
+import { actionSchema, assertionSchema, compareSchema, type Action } from "../schemas/index.js"
 import { pruneHistory } from "../history.js"
 import { buildUserMessage, buildCompactMessage } from "../../message-builder.js"
 import { formatA11yTree } from "../../a11y-parser.js"
 import type { PageState } from "../../../reporter/types.js"
 import { globals } from "../../../globals.js"
 
+const ACTION_KINDS = [
+	"click", "check", "uncheck", "type", "clear", "select", "autocomplete",
+	"scroll", "navigate", "press", "wait", "upload", "assert", "remember", "count",
+] as const
+
 /**
- * JSON shape the LLM returns for a `resolveStep` call: a single Action plus
- * an optional `thinking` field for the model's reasoning.
+ * Wire schema: the flat object the LLM is asked to produce. Every action
+ * field is optional; the `action` discriminator is an enum of literal kinds.
+ *
+ * Flat by design: nested discriminated unions trip up structured-output
+ * mechanisms (the model often stringifies the inner object). Strict per-
+ * variant validation is reapplied via `actionSchema.parse` in
+ * {@link parseResolveStepResponse} once the wire response is back.
  */
 export const resolveStepResponseSchema = z.object({
 	thinking: z.string().optional(),
-	action: actionSchema,
+	action: z.enum(ACTION_KINDS),
+	ref: z.string().optional(),
+	text: z.string().optional(),
+	testid: z.string().optional(),
+	value: z.string().optional(),
+	option: z.string().optional(),
+	assertion: assertionSchema.optional(),
+	compare: compareSchema.optional(),
+	as: z.string().optional(),
 })
 
 /** Stable name forwarded to providers (OpenAI tool name, Anthropic tool name). */
 export const RESOLVE_STEP_SCHEMA_NAME = "resolve_step_response"
 
-/** Inferred TypeScript type for {@link resolveStepResponseSchema}. */
-export type ResolveStepResponse = z.infer<typeof resolveStepResponseSchema>
+/** In-memory shape the rest of the codebase consumes. */
+export interface ResolveStepResponse {
+	thinking?: string
+	action: Action
+}
+
+/**
+ * Translate a flat wire response into a strict `{thinking, action}` envelope.
+ * Runs `actionSchema.parse` so per-variant rules (e.g. "click takes ref/text/
+ * testid only, never value") are enforced before any executor sees the action.
+ */
+export function parseResolveStepResponse(
+	raw: z.infer<typeof resolveStepResponseSchema>,
+): ResolveStepResponse {
+	const { thinking, ...flat } = raw
+	return { thinking, action: actionSchema.parse(flat) }
+}
 
 export const SYSTEM_PROMPT = `You are The Pilot, an AI agent that executes end-to-end tests in a web browser.
 
@@ -84,8 +117,8 @@ Each element in the tree may include enrichment properties indented below it:
 - navigate: Go to a URL. The "value" field holds the URL or path.
 - press: Press a key. The "value" field holds the key name (e.g. "Enter", "Tab", "Escape").
 - wait: Wait for a condition. The "value" field describes what to wait for.
-- remember: Capture a value from the page for later comparison. Target the most specific element containing the value — not a parent or wrapper. Use "rememberAs" for the variable name.
-- count: Count elements matching a description. Use "text" with a value that matches ALL target elements and ONLY those elements. Prefer a common role or accessible name shared by all instances. Use "rememberAs" for the variable name.
+- remember: Capture a value from the page for later comparison. Target the most specific element containing the value, not a parent or wrapper. Use "as" for the variable name.
+- count: Count elements matching a description. Use "text" with a value that matches ALL target elements and ONLY those elements. Prefer a common role or accessible name shared by all instances. Use "as" for the variable name.
 
 ═══ Assertion actions ═══
 
@@ -115,35 +148,38 @@ map_state "expected" examples:
 
 ═══ Decision examples ═══
 
+Each example is the full top-level response object. Fields not relevant to the
+chosen action are simply omitted; do NOT nest the action under another field.
+
 Clicking a button by ref (ref available in tree):
-{"action":{"action":"click","ref":"e5"}}
+{"action":"click","ref":"e5"}
 
 Clicking when element is not in the tree (text fallback):
-{"action":{"action":"click","text":"About us"}}
+{"action":"click","text":"About us"}
 
 Typing realistic test data into an email field:
-{"action":{"action":"type","ref":"e3","value":"jane@example.com"}}
+{"action":"type","ref":"e3","value":"jane@example.com"}
 
 Autocomplete with a specific suggestion:
-{"action":{"action":"autocomplete","ref":"e4","value":"foo","option":"foobar inc"}}
+{"action":"autocomplete","ref":"e4","value":"foo","option":"foobar inc"}
 
 Uploading via data-testid (hidden file input pattern):
-{"action":{"action":"upload","testid":"og-file-input","value":"fixtures/og_image.png"}}
+{"action":"upload","testid":"og-file-input","value":"fixtures/og_image.png"}
 
 Remembering a value (target the specific element, not a wrapper):
-{"action":{"action":"remember","ref":"e15","rememberAs":"product_count"}}
+{"action":"remember","ref":"e15","as":"product_count"}
 
 Counting elements (text must match ALL and ONLY the target elements):
-{"action":{"action":"count","text":"Add to Cart","rememberAs":"cart_buttons"}}
+{"action":"count","text":"Add to Cart","as":"cart_buttons"}
 
 Compare against a remembered variable:
-{"action":{"action":"assert","assertion":{"type":"compare","expected":"product count"},"ref":"e15","compare":{"variable":"product_count","operator":"less_than"}}}
+{"action":"assert","assertion":{"type":"compare","expected":"product count"},"ref":"e15","compare":{"variable":"product_count","operator":"less_than"}}
 
-Compare against a literal number (variable set to "_"):
-{"action":{"action":"assert","assertion":{"type":"compare","expected":"product count"},"ref":"e15","compare":{"variable":"_","operator":"greater_than","literal":0}}}
+Compare against a literal number (variable set to "_"; literal is a string):
+{"action":"assert","assertion":{"type":"compare","expected":"product count"},"ref":"e15","compare":{"variable":"_","operator":"greater_than","literal":"0"}}
 
 Map assertion:
-{"action":{"action":"assert","assertion":{"type":"map_state","expected":"map shows Stockholm"}}}
+{"action":"assert","assertion":{"type":"map_state","expected":"map shows Stockholm"}}
 `
 
 export interface ResolveStepDeps {
@@ -210,10 +246,10 @@ export async function resolveStep(
 		console.log(`      [resolve] Pruned history: ${String(deps.history.length)} -> ${String(historySlice.length)} messages`)
 	}
 
-	// 4. Call the LLM with the structured response schema.
-	let response: { thinking?: string; action: Action }
+	// 4. Call the LLM with the flat wire schema; reconstruct the strict envelope.
+	let response: ResolveStepResponse
 	try {
-		response = await complete({
+		const raw = await complete({
 			provider: deps.provider,
 			config: deps.config,
 			messages: [
@@ -224,12 +260,19 @@ export async function resolveStep(
 			schema: resolveStepResponseSchema,
 			schemaName: RESOLVE_STEP_SCHEMA_NAME,
 		})
+		response = parseResolveStepResponse(raw)
 	} catch (err) {
 		// Context-length recovery: clear history and retry with a fresh full message.
-		if (err instanceof LLMApiError && /context.length|token/i.test(err.message)) {
-			console.log(`      Context length exceeded, clearing history and retrying`)
+		// Only matches genuine context-overflow phrasings. Avoids JSON property names
+		// like "contextWindow" or "input_tokens" that show up in error metadata dumps.
+		const isContextOverflow = err instanceof LLMApiError && (
+			/\bcontext length\b|\bprompt is too long\b|\bcontext_length_exceeded\b|\binput length and `?max_tokens`? exceed/i
+				.test(err.message)
+		)
+		if (isContextOverflow) {
+			console.log(`      Context length exceeded, clearing history and retrying. Original error: ${err.message}`)
 			const freshMessage = buildUserMessage(step, pageState)
-			response = await complete({
+			const raw = await complete({
 				provider: deps.provider,
 				config: deps.config,
 				messages: [
@@ -239,6 +282,7 @@ export async function resolveStep(
 				schema: resolveStepResponseSchema,
 				schemaName: RESOLVE_STEP_SCHEMA_NAME,
 			})
+			response = parseResolveStepResponse(raw)
 			deps.cache.set(cacheKey, response.action)
 			return {
 				action: response.action,

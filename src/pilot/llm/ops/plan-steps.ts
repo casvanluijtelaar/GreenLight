@@ -51,8 +51,8 @@ Each output step describes ONE atomic interaction. If a step implies multiple in
 Rules:
 - Any step that says "check that", "verify", or similar is ALWAYS an assertion (atomic with an assert action).
 - Assertions with explicit quoted strings resolve as atomic assert steps.
-- Assertions that compare a count or number against a specific number (e.g. "greater than 0", "at least 5") resolve as atomic assert steps with action "assert" and type "numeric".
-- Assertions that compare against a previously remembered value (e.g. "check that the count decreased") require a COMPARE action pairing with a prior REMEMBER or COUNT.
+- Assertions that compare a count or number against a specific number (e.g. "greater than 0", "at least 5") resolve as atomic assert steps with assertion type "compare" and a compare clause where "variable" is "_" and "literal" is the number as a string (e.g. "0").
+- Assertions that compare against a previously remembered value (e.g. "check that the count decreased") require a COMPARE clause pairing with a prior REMEMBER or COUNT (set "variable" to the remembered name).
 - Assertions WITHOUT quoted strings and without numeric comparisons cannot be pre-resolved. Use kind "page" with the full step as description.
 - A pure assertion is a single step. Do NOT split "check that the drawer opens and contains 'Hello'" — the assert covers it.
 - BUT when a step combines an assertion AND an interaction (e.g. "check X and click Y"), ALWAYS split: one assertion + one interaction.
@@ -98,16 +98,16 @@ Input: "navigate to /dashboard"
 Output: {"kind":"atomic","step":"navigate to /dashboard","action":{"action":"navigate","value":"/dashboard"},"inputStepIndex":0}
 
 Input: "count the number of product cards"
-Output: {"kind":"atomic","step":"count the number of product cards","action":{"action":"count","text":"product card","rememberAs":"product_card_count"},"inputStepIndex":0}
+Output: {"kind":"atomic","step":"count the number of product cards","action":{"action":"count","text":"product card","as":"product_card_count"},"inputStepIndex":0}
 
 Input: "remember the total price"
-Output: {"kind":"atomic","step":"remember the total price","action":{"action":"remember","text":"total price","rememberAs":"total_price"},"inputStepIndex":0}
+Output: {"kind":"atomic","step":"remember the total price","action":{"action":"remember","text":"total price","as":"total_price"},"inputStepIndex":0}
 
 Input: "check that the price decreased" (assuming a prior REMEMBER stored "total_price")
 Output: {"kind":"atomic","step":"check that the price decreased","action":{"action":"assert","assertion":{"type":"compare","expected":"the total price shown"},"compare":{"variable":"total_price","operator":"less_than"}},"inputStepIndex":0}
 
 Input: "check that the count of products shown is greater than 0"
-Output: {"kind":"atomic","step":"check that the count of products shown is greater than 0","action":{"action":"assert","assertion":{"type":"numeric","expected":"check that the count of products shown is greater than 0"}},"inputStepIndex":0}
+Output: {"kind":"atomic","step":"check that the count of products shown is greater than 0","action":{"action":"assert","assertion":{"type":"compare","expected":"count of products shown"},"compare":{"variable":"_","operator":"greater_than","literal":"0"}},"inputStepIndex":0}
 
 Input: "if 'Accept cookies' is visible, click it"
 Output: {"kind":"conditional","step":"if 'Accept cookies' is visible, click it","condition":{"kind":"visible","value":"Accept cookies"},"thenBranch":[{"kind":"page","step":"click 'Accept cookies'"}],"inputStepIndex":0}

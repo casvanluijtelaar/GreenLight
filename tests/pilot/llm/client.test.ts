@@ -37,7 +37,7 @@ const pageState: PageState = {
 
 describe("createLLMClient (facade)", () => {
 	it("resolveStep returns the action and accumulates history", async () => {
-		const provider = makeProvider(async () => ({ action: { action: "click", ref: "e1" } }))
+		const provider = makeProvider(async () => ({ action: "click", ref: "e1" }))
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
 
 		const a1 = await client.resolveStep("step 1", pageState)
@@ -46,7 +46,7 @@ describe("createLLMClient (facade)", () => {
 	})
 
 	it("resetHistory clears state so the next call starts fresh", async () => {
-		const provider = makeProvider(async () => ({ action: { action: "click", ref: "e1" } }))
+		const provider = makeProvider(async () => ({ action: "click", ref: "e1" }))
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
 
 		await client.resolveStep("step 1", pageState)
@@ -109,7 +109,7 @@ describe("createLLMClient (facade)", () => {
 		let callCount = 0
 		const provider = makeProvider(async () => {
 			callCount++
-			return { action: { action: "click", ref: callCount === 1 ? "e1" : "e2" } }
+			return { action: "click", ref: callCount === 1 ? "e1" : "e2" }
 		})
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "m", pilotModel: "m" })
 

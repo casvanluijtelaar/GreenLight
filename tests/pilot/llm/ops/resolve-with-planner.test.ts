@@ -38,7 +38,7 @@ describe("resolveStepWithPlanner", () => {
 	})
 
 	it("returns the action when planner differs from pilot", async () => {
-		const provider = makeProvider(async () => ({ action: { action: "click", ref: "e1" } }))
+		const provider = makeProvider(async () => ({ action: "click", ref: "e1" }))
 		const result = await resolveStepWithPlanner("step", pageState, {
 			provider, config: { apiKey: "k", model: "p" }, plannerModel: "p", pilotModel: "m",
 		})

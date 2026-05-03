@@ -99,8 +99,17 @@ export function createPlanRecorder(
 				hStep.testid = action.testid
 			}
 
+			// For `select`, the chosen option label lives on `action.option` in the
+			// LLM schema but the runner reads it from `step.value` (consistent with
+			// every other action whose payload is a single string). Translate here.
+			// For `autocomplete`, `option` is a separate optional pick in addition
+			// to `value`, and the runner reads `step.option` directly — keep as-is.
 			if ("option" in action && action.option !== undefined) {
-				hStep.option = action.option
+				if (action.action === "select") {
+					hStep.value = action.option
+				} else {
+					hStep.option = action.option
+				}
 			}
 
 			// `as` lives on remember/count variants in the new schema
