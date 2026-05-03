@@ -166,28 +166,28 @@ const assert_ = z.object({
 
 /**
  * Capture a value from the page into a named variable for later comparison.
- * The runtime reads the targeted element's text and stores it under `as` in
- * the variable bag.
+ * The runtime reads the targeted element's text and stores it under
+ * `rememberAs` in the variable bag.
  */
 const remember = z.object({
 	action: z.literal("remember"),
 	ref: z.string().optional(),
 	text: z.string().optional(),
 	/** Name to store the captured value under. Read by later `compare` clauses. */
-	as: z.string(),
+	rememberAs: z.string(),
 })
 
 /**
  * Count the number of elements on the page matching the targeting fields and
- * store the count under `as`. Useful with later `assert + compare` to verify
- * "at least N items" or similar.
+ * store the count under `rememberAs`. Useful with later `assert + compare`
+ * to verify "at least N items" or similar.
  */
 const count = z.object({
 	action: z.literal("count"),
 	ref: z.string().optional(),
 	text: z.string().optional(),
 	/** Name to store the count under. Read by later `compare` clauses. */
-	as: z.string(),
+	rememberAs: z.string(),
 })
 
 /**

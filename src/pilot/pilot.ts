@@ -86,10 +86,10 @@ function attachCompare(
  * If the plan declared this step as a remember, ensure the action is shaped
  * as a remember regardless of what the LLM returned.
  */
-function attachRememberAs(previous: Action, as: string): Action {
+function attachRememberAs(previous: Action, rememberAs: string): Action {
 	return {
 		action: "remember",
-		as,
+		rememberAs,
 		...(actionRef(previous) ? { ref: actionRef(previous) } : {}),
 		...(actionText(previous) ? { text: actionText(previous) } : {}),
 	}
@@ -234,7 +234,7 @@ export async function runTestCase(
 		// Variable name a remember/count step writes to (only present on atomic remember/count)
 		const rememberAs: string | undefined =
 			plannedAction && (plannedAction.action === "remember" || plannedAction.action === "count")
-				? plannedAction.as
+				? plannedAction.rememberAs
 				: undefined
 
 		// ── MAP_DETECT: find and attach to a map instance ─────────────
@@ -461,7 +461,7 @@ export async function runTestCase(
 		if (planned.kind === "atomic" && planned.action.action === "count") {
 			trace.log("count:start", step)
 			const stepStart2 = performance.now()
-			const countTargetAs = planned.action.as
+			const countTargetAs = planned.action.rememberAs
 
 			if (options.waitForNetworkIdle) {
 				await options.waitForNetworkIdle()
@@ -486,7 +486,7 @@ export async function runTestCase(
 				}
 				const countAction: Extract<Action, { action: "count" }> = {
 					action: "count",
-					as: countTargetAs,
+					rememberAs: countTargetAs,
 					...(refHint ? { ref: refHint } : {}),
 					...(textHint ? { text: textHint } : {}),
 				}
@@ -713,7 +713,7 @@ export async function runTestCase(
 
 								// Store remembered value
 								if (retryResult.rememberedValue !== undefined && plannerAction.action === "remember") {
-									globals.valueStore.set(plannerAction.as, retryResult.rememberedValue)
+									globals.valueStore.set(plannerAction.rememberAs, retryResult.rememberedValue)
 								}
 
 								// Wait for page to stabilize
@@ -767,7 +767,7 @@ export async function runTestCase(
 
 			// Store remembered value if this was a remember action
 			if (result.rememberedValue !== undefined && action.action === "remember") {
-				globals.valueStore.set(action.as, result.rememberedValue)
+				globals.valueStore.set(action.rememberAs, result.rememberedValue)
 			}
 
 			// Wait for navigation to complete after mutating actions.

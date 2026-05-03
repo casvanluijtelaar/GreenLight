@@ -18,16 +18,16 @@ import { describe, it, expect } from "vitest"
 import { fixPlanOrdering, validatePlanReferences } from "../../../src/pilot/llm/plan-utils.js"
 import type { PlannedStep } from "../../../src/pilot/llm/schemas/index.js"
 
-const remember = (as: string, step = `remember ${as}`): PlannedStep => ({
+const remember = (rememberAs: string, step = `remember ${rememberAs}`): PlannedStep => ({
 	kind: "atomic",
 	step,
-	action: { action: "remember", ref: "field", as },
+	action: { action: "remember", ref: "field", rememberAs },
 })
 
-const count = (as: string, step = `count ${as}`): PlannedStep => ({
+const count = (rememberAs: string, step = `count ${rememberAs}`): PlannedStep => ({
 	kind: "atomic",
 	step,
-	action: { action: "count", ref: "list", as },
+	action: { action: "count", ref: "list", rememberAs },
 })
 
 const compare = (variable: string, literal?: string, step = `compare ${variable}`): PlannedStep => ({

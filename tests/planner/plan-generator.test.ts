@@ -42,13 +42,13 @@ describe("plan-generator field mapping (Action → HeuristicStep)", () => {
 		expect(step.option).toBe("Stockholm")
 	})
 
-	it("maps the new schema field `as` to the cache field `rememberAs` for remember", () => {
-		const step = recordOne({ action: "remember", ref: "e1", as: "total_price" })
+	it("copies rememberAs through verbatim for remember", () => {
+		const step = recordOne({ action: "remember", ref: "e1", rememberAs: "total_price" })
 		expect(step.rememberAs).toBe("total_price")
 	})
 
-	it("maps `as` to `rememberAs` for count", () => {
-		const step = recordOne({ action: "count", text: "product card", as: "product_count" })
+	it("copies rememberAs through verbatim for count", () => {
+		const step = recordOne({ action: "count", text: "product card", rememberAs: "product_count" })
 		expect(step.rememberAs).toBe("product_count")
 	})
 

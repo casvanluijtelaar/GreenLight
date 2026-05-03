@@ -49,7 +49,7 @@ export const resolveStepResponseSchema = z.object({
 	option: z.string().optional(),
 	assertion: assertionSchema.optional(),
 	compare: compareSchema.optional(),
-	as: z.string().optional(),
+	rememberAs: z.string().optional(),
 })
 
 /** Stable name forwarded to providers (OpenAI tool name, Anthropic tool name). */
@@ -117,8 +117,8 @@ Each element in the tree may include enrichment properties indented below it:
 - navigate: Go to a URL. The "value" field holds the URL or path.
 - press: Press a key. The "value" field holds the key name (e.g. "Enter", "Tab", "Escape").
 - wait: Wait for a condition. The "value" field describes what to wait for.
-- remember: Capture a value from the page for later comparison. Target the most specific element containing the value, not a parent or wrapper. Use "as" for the variable name.
-- count: Count elements matching a description. Use "text" with a value that matches ALL target elements and ONLY those elements. Prefer a common role or accessible name shared by all instances. Use "as" for the variable name.
+- remember: Capture a value from the page for later comparison. Target the most specific element containing the value, not a parent or wrapper. Use "rememberAs" for the variable name.
+- count: Count elements matching a description. Use "text" with a value that matches ALL target elements and ONLY those elements. Prefer a common role or accessible name shared by all instances. Use "rememberAs" for the variable name.
 
 ═══ Assertion actions ═══
 
@@ -167,10 +167,10 @@ Uploading via data-testid (hidden file input pattern):
 {"action":"upload","testid":"og-file-input","value":"fixtures/og_image.png"}
 
 Remembering a value (target the specific element, not a wrapper):
-{"action":"remember","ref":"e15","as":"product_count"}
+{"action":"remember","ref":"e15","rememberAs":"product_count"}
 
 Counting elements (text must match ALL and ONLY the target elements):
-{"action":"count","text":"Add to Cart","as":"cart_buttons"}
+{"action":"count","text":"Add to Cart","rememberAs":"cart_buttons"}
 
 Compare against a remembered variable:
 {"action":"assert","assertion":{"type":"compare","expected":"product count"},"ref":"e15","compare":{"variable":"product_count","operator":"less_than"}}

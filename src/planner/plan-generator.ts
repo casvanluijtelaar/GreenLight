@@ -112,9 +112,9 @@ export function createPlanRecorder(
 				}
 			}
 
-			// `as` lives on remember/count variants in the new schema
-			if ("as" in action && action.as !== undefined) {
-				hStep.rememberAs = action.as
+			// `rememberAs` is the variable name for remember/count variants.
+			if ("rememberAs" in action && action.rememberAs !== undefined) {
+				hStep.rememberAs = action.rememberAs
 			}
 
 			if ("compare" in action && action.compare) {

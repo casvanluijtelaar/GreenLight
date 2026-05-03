@@ -748,7 +748,7 @@ export async function executeAction(
 					// likely picked the wrong element. Fall back to page-text
 					// keyword search (same strategy as compare assertions).
 					const wantsNumber = /number|count|total|amount|qty|quantity|pris|antal|resultat/.test(
-						action.as.toLowerCase() + " " + (stepHint ?? "").toLowerCase(),
+						action.rememberAs.toLowerCase() + " " + (stepHint ?? "").toLowerCase(),
 					)
 					if (!locatorResolved || (wantsNumber && !/\d/.test(capturedText))) {
 						if (globals.debug && locatorResolved) {
@@ -756,7 +756,7 @@ export async function executeAction(
 						}
 						// Use the step hint (original step text) as search hint —
 						// it contains page-language terms. Fall back to variable name.
-						const searchHint = stepHint ?? action.as.replace(/_/g, " ")
+						const searchHint = stepHint ?? action.rememberAs.replace(/_/g, " ")
 						try {
 							capturedText = await findValueByKeyword(page, searchHint)
 							if (globals.debug) {
@@ -777,7 +777,7 @@ export async function executeAction(
 					if (globals.debug) {
 						console.log(`      [remember] No ref/text target, searching page text for matching value`)
 					}
-					const searchHint = stepHint ?? action.as.replace(/_/g, " ")
+					const searchHint = stepHint ?? action.rememberAs.replace(/_/g, " ")
 					try {
 						capturedText = await findValueByKeyword(page, searchHint)
 					} catch {
@@ -793,7 +793,7 @@ export async function executeAction(
 					const preview = capturedText.length > 80
 						? capturedText.slice(0, 80) + "..."
 						: capturedText
-					console.log(`      [remember] Captured "${preview}" as "${action.as}"`)
+					console.log(`      [remember] Captured "${preview}" as "${action.rememberAs}"`)
 				}
 				rememberedValue = capturedText
 				break

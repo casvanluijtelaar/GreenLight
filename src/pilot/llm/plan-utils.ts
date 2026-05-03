@@ -25,12 +25,12 @@ import type { PlannedStep } from "./schemas/index.js"
 
 /**
  * Read the variable name a step writes to, if any.
- * Atomic remember/count steps both carry `as` on the action variant.
+ * Atomic remember/count steps both carry `rememberAs` on the action variant.
  */
 function getRememberTarget(step: PlannedStep): string | undefined {
 	if (step.kind !== "atomic") return undefined
 	const a = step.action
-	if (a.action === "remember" || a.action === "count") return a.as
+	if (a.action === "remember" || a.action === "count") return a.rememberAs
 	return undefined
 }
 

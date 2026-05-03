@@ -98,10 +98,10 @@ Input: "navigate to /dashboard"
 Output: {"kind":"atomic","step":"navigate to /dashboard","action":{"action":"navigate","value":"/dashboard"},"inputStepIndex":0}
 
 Input: "count the number of product cards"
-Output: {"kind":"atomic","step":"count the number of product cards","action":{"action":"count","text":"product card","as":"product_card_count"},"inputStepIndex":0}
+Output: {"kind":"atomic","step":"count the number of product cards","action":{"action":"count","text":"product card","rememberAs":"product_card_count"},"inputStepIndex":0}
 
 Input: "remember the total price"
-Output: {"kind":"atomic","step":"remember the total price","action":{"action":"remember","text":"total price","as":"total_price"},"inputStepIndex":0}
+Output: {"kind":"atomic","step":"remember the total price","action":{"action":"remember","text":"total price","rememberAs":"total_price"},"inputStepIndex":0}
 
 Input: "check that the price decreased" (assuming a prior REMEMBER stored "total_price")
 Output: {"kind":"atomic","step":"check that the price decreased","action":{"action":"assert","assertion":{"type":"compare","expected":"the total price shown"},"compare":{"variable":"total_price","operator":"less_than"}},"inputStepIndex":0}

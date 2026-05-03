@@ -44,12 +44,12 @@ describe("actionSchema", () => {
 		})
 	})
 
-	it("accepts remember with as", () => {
-		expect(actionSchema.parse({ action: "remember", ref: "e2", as: "username" }))
-			.toEqual({ action: "remember", ref: "e2", as: "username" })
+	it("accepts remember with rememberAs", () => {
+		expect(actionSchema.parse({ action: "remember", ref: "e2", rememberAs: "username" }))
+			.toEqual({ action: "remember", ref: "e2", rememberAs: "username" })
 	})
 
-	it("rejects remember without as", () => {
+	it("rejects remember without rememberAs", () => {
 		expect(() => actionSchema.parse({ action: "remember", ref: "e2" })).toThrow()
 	})
 
