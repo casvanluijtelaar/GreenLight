@@ -26,20 +26,16 @@ import { z } from "zod"
  * page state.
  */
 export const conditionSchema = z.object({
-	/**
-	 * Which kind of check to perform:
-	 * - `visible`: an element matching `target` is visibly rendered on the page.
-	 * - `contains`: the page text contains `target` as a substring.
-	 * - `url`: the current URL contains `target` as a substring.
-	 */
-	type: z.enum(["visible", "contains", "url"]),
-	/**
-	 * What to look for. The interpretation depends on `type`:
-	 * a free-form description of the element for `visible`, or a substring
-	 * for `contains` / `url`.
-	 */
-	target: z.string(),
-})
+	type: z.enum(["visible", "contains", "url"]).describe(
+		"Which check to perform:\n" +
+		"- visible: an element matching 'target' is visibly rendered on the page.\n" +
+		"- contains: the page text contains 'target' as a literal substring.\n" +
+		"- url: the current URL contains 'target' as a literal substring.",
+	),
+	target: z.string().describe(
+		"What to look for. For 'visible' this is a free-form element description (matched against accessible name / text). For 'contains' and 'url' this is a literal substring.",
+	),
+}).describe("Condition for a conditional planned step. Evaluated against the live page state at runtime to decide whether to take the 'then' or 'else' branch.")
 
 /** A condition the runtime evaluates against the live page state. */
 export type Condition = z.infer<typeof conditionSchema>

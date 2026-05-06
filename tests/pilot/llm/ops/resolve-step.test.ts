@@ -16,12 +16,14 @@
 
 import { describe, it, expect, vi } from "vitest"
 import { resolveStep } from "../../../../src/pilot/llm/ops/resolve-step.js"
-import type { LLMProvider } from "../../../../src/pilot/llm/provider.js"
+import type { LLMProvider, GenerateRequest } from "../../../../src/pilot/llm/provider.js"
 import type { PageState } from "../../../../src/reporter/types.js"
 
-function makeProvider(generateImpl: () => Promise<unknown>): LLMProvider {
+function makeProvider(
+	generateImpl: <T>(req: GenerateRequest<T>) => Promise<T>,
+): LLMProvider {
 	return {
-		generate: vi.fn(generateImpl),
+		generate: vi.fn(generateImpl) as unknown as LLMProvider["generate"],
 	}
 }
 
@@ -35,7 +37,7 @@ const pageState: PageState = {
 
 describe("resolveStep", () => {
 	it("returns the action and updates history on a fresh call", async () => {
-		const provider = makeProvider(async () => ({ action: "click", ref: "e3" }))
+		const provider = makeProvider(async <T,>() => ({ action: "click", ref: "e3" }) as T)
 		const result = await resolveStep("click submit", pageState, {
 			provider, config: { apiKey: "k", model: "m" },
 			history: [], prevPageState: null, prevFormattedTree: "",
@@ -61,12 +63,12 @@ describe("resolveStep", () => {
 	})
 
 	it("forwards the resolveStepResponseSchema name", async () => {
-		const provider = makeProvider(async () => ({ action: "click", ref: "e1" }))
+		const provider = makeProvider(async <T,>() => ({ action: "click", ref: "e1" }) as T)
 		await resolveStep("click", pageState, {
 			provider, config: { apiKey: "k", model: "m" },
 			history: [], prevPageState: null, prevFormattedTree: "", cache: new Map(),
 		})
-		const req = (provider.generate as ReturnType<typeof vi.fn>).mock.calls[0][0]
+		const req = (provider.generate as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]
 		expect(req.schemaName).toBe("resolve_step_response")
 	})
 })

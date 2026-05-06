@@ -17,9 +17,12 @@
 /**
  * Provider-agnostic LLM transport interface.
  *
- * Providers implement `generate`: schema-aware generation that returns parsed
- * JSON. The legacy `chatCompletion` method was removed in Phase E.
+ * Each provider receives a Zod schema and returns the parsed, typed value.
+ * Schema-to-JSON-Schema conversion and validation live inside each provider
+ * so the OpenAI provider can transform the schema locally for its strict
+ * mode without bothering the rest of the codebase.
  */
+import type { z } from "zod"
 
 export interface ChatMessage {
 	role: "system" | "user" | "assistant"
@@ -31,23 +34,27 @@ export interface ProviderConfig {
 	model: string
 }
 
-export interface GenerateRequest {
+export interface GenerateRequest<T> {
 	messages: ChatMessage[]
-	/** JSON Schema (already converted from Zod by the caller). */
-	schema: object
-	/** Required by some providers (OpenAI tool name, Anthropic tool name); ignored by others. */
+	/** The Zod schema describing the expected response shape (canonical form). */
+	schema: z.ZodType<T>
+	/** Stable identifier (OpenAI tool name, Anthropic tool name). */
 	schemaName: string
 	config: ProviderConfig
 }
 
 export interface LLMProvider {
 	/**
-	 * Schema-aware generation. Returns raw JSON; validation happens above
-	 * (in `complete<T>`). The provider applies its native structured-output
-	 * mechanism (OpenAI response_format, Anthropic tool-use, Gemini
-	 * responseJsonSchema, Claude Code --json-schema).
+	 * Schema-aware generation. Each provider:
+	 *   1. Converts `req.schema` to JSON Schema (and may transform it for the
+	 *      native API's quirks — see openai-compatible.ts).
+	 *   2. Calls the native structured-output mechanism.
+	 *   3. Validates the response with `req.schema.parse(...)` and returns T.
+	 *
+	 * `ZodError` from the parse step bubbles up to `complete<T>` which retries
+	 * once with a correction message.
 	 */
-	generate(req: GenerateRequest): Promise<unknown>
+	generate<T>(req: GenerateRequest<T>): Promise<T>
 }
 
 export class LLMApiError extends Error {

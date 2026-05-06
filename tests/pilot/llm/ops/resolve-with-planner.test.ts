@@ -16,11 +16,13 @@
 
 import { describe, it, expect, vi } from "vitest"
 import { resolveStepWithPlanner } from "../../../../src/pilot/llm/ops/resolve-with-planner.js"
-import type { LLMProvider } from "../../../../src/pilot/llm/provider.js"
+import type { LLMProvider, GenerateRequest } from "../../../../src/pilot/llm/provider.js"
 import type { PageState } from "../../../../src/reporter/types.js"
 
-function makeProvider(impl: () => Promise<unknown>): LLMProvider {
-	return { generate: vi.fn(impl) }
+function makeProvider(
+	impl: <T>(req: GenerateRequest<T>) => Promise<T>,
+): LLMProvider {
+	return { generate: vi.fn(impl) as unknown as LLMProvider["generate"] }
 }
 
 const pageState: PageState = {
@@ -38,7 +40,7 @@ describe("resolveStepWithPlanner", () => {
 	})
 
 	it("returns the action when planner differs from pilot", async () => {
-		const provider = makeProvider(async () => ({ action: "click", ref: "e1" }))
+		const provider = makeProvider(async <T,>() => ({ action: "click", ref: "e1" }) as T)
 		const result = await resolveStepWithPlanner("step", pageState, {
 			provider, config: { apiKey: "k", model: "p" }, plannerModel: "p", pilotModel: "m",
 		})

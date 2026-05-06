@@ -17,7 +17,7 @@
 import { describe, it, expect, vi } from "vitest"
 import type { Page } from "playwright"
 import { createLLMClient } from "../../../src/pilot/llm/index.js"
-import type { LLMProvider } from "../../../src/pilot/llm/provider.js"
+import type { LLMProvider, GenerateRequest } from "../../../src/pilot/llm/provider.js"
 import type { PageState } from "../../../src/reporter/types.js"
 
 vi.mock("../../../src/pilot/form-fields.js", () => ({
@@ -25,9 +25,11 @@ vi.mock("../../../src/pilot/form-fields.js", () => ({
 	formatFormFields: vi.fn(() => "(no form fields)"),
 }))
 
-function makeProvider(generateImpl: () => Promise<unknown>): LLMProvider {
+function makeProvider(
+	generateImpl: <T>(req: GenerateRequest<T>) => Promise<T>,
+): LLMProvider {
 	return {
-		generate: vi.fn(generateImpl),
+		generate: vi.fn(generateImpl) as unknown as LLMProvider["generate"],
 	}
 }
 
@@ -37,7 +39,7 @@ const pageState: PageState = {
 
 describe("createLLMClient (facade)", () => {
 	it("resolveStep returns the action and accumulates history", async () => {
-		const provider = makeProvider(async () => ({ action: "click", ref: "e1" }))
+		const provider = makeProvider(async <T,>() => ({ action: "click", ref: "e1" }) as T)
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
 
 		const a1 = await client.resolveStep("step 1", pageState)
@@ -46,7 +48,7 @@ describe("createLLMClient (facade)", () => {
 	})
 
 	it("resetHistory clears state so the next call starts fresh", async () => {
-		const provider = makeProvider(async () => ({ action: "click", ref: "e1" }))
+		const provider = makeProvider(async <T,>() => ({ action: "click", ref: "e1" }) as T)
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
 
 		await client.resolveStep("step 1", pageState)
@@ -54,14 +56,14 @@ describe("createLLMClient (facade)", () => {
 		await client.resolveStep("step 2", pageState)
 
 		// Both calls should send only system + user (no history); inspect the second call's messages
-		const secondCall = (provider.generate as ReturnType<typeof vi.fn>).mock.calls[1][0]
+		const secondCall = (provider.generate as unknown as ReturnType<typeof vi.fn>).mock.calls[1][0]
 		expect(secondCall.messages).toHaveLength(2)   // system + user only
 	})
 
 	it("planSteps returns the steps from the response", async () => {
-		const provider = makeProvider(async () => ({
+		const provider = makeProvider(async <T,>() => ({
 			steps: [{ kind: "atomic", step: "click submit", action: { action: "click", ref: "e1" }, inputStepIndex: 0 }],
-		}))
+		}) as T)
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
 		const steps = await client.planSteps(["click the submit button"])
 		expect(steps).toHaveLength(1)
@@ -69,7 +71,7 @@ describe("createLLMClient (facade)", () => {
 	})
 
 	it("evaluateCondition returns the boolean", async () => {
-		const provider = makeProvider(async () => ({ result: true }))
+		const provider = makeProvider(async <T,>() => ({ result: true }) as T)
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
 		const r = await client.evaluateCondition("submit visible", "visible", pageState)
 		expect(r).toBe(true)
@@ -90,12 +92,12 @@ describe("createLLMClient (facade)", () => {
 	})
 
 	it("expandStep returns the sub-steps from the provider response", async () => {
-		const provider = makeProvider(async () => ({
+		const provider = makeProvider(async <T,>() => ({
 			steps: [
 				{ kind: "atomic", step: "type name", action: { action: "type", ref: "e1", value: "Alice" } },
 				{ kind: "atomic", step: "click submit", action: { action: "click", ref: "e2" } },
 			],
-		}))
+		}) as T)
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "p", pilotModel: "m" })
 
 		const steps = await client.expandStep("fill the form", pageState, {} as Page)
@@ -107,9 +109,9 @@ describe("createLLMClient (facade)", () => {
 
 	it("accumulates conversation history across resolveStep calls", async () => {
 		let callCount = 0
-		const provider = makeProvider(async () => {
+		const provider = makeProvider(async <T,>() => {
 			callCount++
-			return { action: "click", ref: callCount === 1 ? "e1" : "e2" }
+			return { action: "click", ref: callCount === 1 ? "e1" : "e2" } as T
 		})
 		const client = createLLMClient({ apiKey: "k", provider, plannerModel: "m", pilotModel: "m" })
 
@@ -117,7 +119,7 @@ describe("createLLMClient (facade)", () => {
 		await client.resolveStep("step 2", { ...pageState, url: "https://example.com/other" })
 
 		// Second call should include history from first call: system + user1 + assistant1 + user2 = 4
-		const secondCall = (provider.generate as ReturnType<typeof vi.fn>).mock.calls[1][0]
+		const secondCall = (provider.generate as unknown as ReturnType<typeof vi.fn>).mock.calls[1][0]
 		expect(secondCall.messages).toHaveLength(4)
 	})
 })

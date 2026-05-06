@@ -25,13 +25,10 @@ import { conditionSchema } from "./condition.js"
  */
 const atomicStep = z.object({
 	kind: z.literal("atomic"),
-	/** Human-readable description of the step (the original test step text or the planner's rephrasing). */
-	step: z.string(),
-	/** The fully-resolved action to execute. See {@link actionSchema}. */
+	step: z.string().describe("Human-readable description of the step (the original test text or the planner's rephrasing)."),
 	action: actionSchema,
-	/** Index of the original test input step this planned step came from (zero-based). */
-	inputStepIndex: z.number().int().optional(),
-})
+	inputStepIndex: z.number().int().nonnegative().describe("Zero-based index of the original input step this planned step came from. When one input produces multiple outputs they share the same index.").optional(),
+}).describe("A step with a fully-resolved action attached. Use this for any step the planner can decide without seeing the live page (navigates with explicit URLs, presses, scrolls, assertions with quoted strings or numeric comparisons, remember / count).")
 
 /**
  * A compound step (typically "fill in the form") that needs runtime expansion
@@ -40,9 +37,9 @@ const atomicStep = z.object({
  */
 const expandStep = z.object({
 	kind: z.literal("expand"),
-	step: z.string(),
-	inputStepIndex: z.number().int().optional(),
-})
+	step: z.string().describe("Full original step text — values mentioned in it must be preserved so the runtime expansion can use them."),
+	inputStepIndex: z.number().int().nonnegative().optional(),
+}).describe("A compound step (e.g. 'fill in the contact form and submit') that needs the live page to decompose into atomic actions. Use ONLY when the specific fields are unknown until runtime.")
 
 /**
  * A date/time picker step. The runtime detects whether the picker is a
@@ -52,9 +49,9 @@ const expandStep = z.object({
  */
 const datepickStep = z.object({
 	kind: z.literal("datepick"),
-	step: z.string(),
-	inputStepIndex: z.number().int().optional(),
-})
+	step: z.string().describe("Full step text including the time expression (e.g. '10 minutes from now', 'tomorrow', '2026-06-15 14:30'). The runtime parses the expression."),
+	inputStepIndex: z.number().int().nonnegative().optional(),
+}).describe("A step that sets a date or time value in a picker widget (native input, MUI sectioned spinbutton, or calendar popup). The runtime auto-detects the picker type.")
 
 /**
  * Detect a map adapter (MapLibre, Leaflet, Mapbox, etc.) on the page and
@@ -63,9 +60,9 @@ const datepickStep = z.object({
  */
 const mapDetectStep = z.object({
 	kind: z.literal("mapdetect"),
-	step: z.string(),
-	inputStepIndex: z.number().int().optional(),
-})
+	step: z.string().describe("Short description like 'detect map'."),
+	inputStepIndex: z.number().int().nonnegative().optional(),
+}).describe("Detect and attach to a map adapter (MapLibre, Leaflet, Mapbox). Emit ONCE, before any step that interacts with or asserts on the map.")
 
 /**
  * An informational PAGE marker step. Records intent in the run report but
@@ -73,9 +70,9 @@ const mapDetectStep = z.object({
  */
 const pageStep = z.object({
 	kind: z.literal("page"),
-	step: z.string(),
-	inputStepIndex: z.number().int().optional(),
-})
+	step: z.string().describe("Self-contained description of the single interaction (preserve any context from the original input step)."),
+	inputStepIndex: z.number().int().nonnegative().optional(),
+}).describe("A step that needs the live page state to decide which element to target. Use for clicks, types, selects, and assertions without quoted strings or numeric comparisons.")
 
 // Recursive type: thenBranch and elseBranch each contain arrays of PlannedStep,
 // which can themselves be conditionals.
@@ -121,16 +118,12 @@ export const plannedStepSchema: z.ZodType<PlannedStepShape> = z.lazy(() =>
 		pageStep,
 		z.object({
 			kind: z.literal("conditional"),
-			/** Human-readable description of the conditional (e.g. "if cookie banner is visible"). */
-			step: z.string(),
-			/** Condition to evaluate at runtime. See {@link conditionSchema}. */
+			step: z.string().describe("Human-readable description of the conditional (e.g. 'if cookie banner is visible, accept it')."),
 			condition: conditionSchema,
-			/** Steps to execute when the condition is met. */
-			thenBranch: z.array(plannedStepSchema),
-			/** Optional steps to execute when the condition is not met. */
-			elseBranch: z.array(plannedStepSchema).optional(),
-			inputStepIndex: z.number().int().optional(),
-		}),
+			thenBranch: z.array(plannedStepSchema).describe("Steps to execute when the condition is met."),
+			elseBranch: z.array(plannedStepSchema).describe("Steps to execute when the condition is NOT met. Omit when there is no else branch.").optional(),
+			inputStepIndex: z.number().int().nonnegative().optional(),
+		}).describe("An if/then/else step. Each branch is itself an array of PlannedSteps and may contain further conditionals."),
 	]),
 )
 
@@ -142,3 +135,4 @@ export type PlannedStep = z.infer<typeof plannedStepSchema>
  * Anthropic tool name). Snake_case to match common API conventions.
  */
 export const PLANNED_STEP_SCHEMA_NAME = "planned_step"
+

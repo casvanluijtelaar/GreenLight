@@ -53,25 +53,32 @@ export const assertionTypeSchema = z.enum([
 	"contains_remembered",
 	"map_state",
 	"compare",
-])
+]).describe(
+	"Which check to perform. Each value has specific requirements on the surrounding 'assert' action:\n" +
+	"- contains_text: page body contains 'expected' as a literal substring (use whenever a step quotes a fixed string).\n" +
+	"- not_contains_text: page body does NOT contain 'expected' as a literal substring.\n" +
+	"- contains_remembered: page body contains a previously remembered variable's value. REQUIRES action.compare.variable to name the remembered variable. NEVER use for literal substrings — that is contains_text.\n" +
+	"- url_contains: current page URL contains 'expected' as a literal substring.\n" +
+	"- element_visible / element_not_visible: an element matching 'expected' is (or is not) visible on the page.\n" +
+	"- element_exists: an element matching 'expected' exists in the DOM.\n" +
+	"- link_exists: an <a> element with href matching 'expected' exists.\n" +
+	"- field_exists: a form field with label/placeholder/aria-label matching 'expected' exists.\n" +
+	"- element_in_viewport / element_not_in_viewport: an element matching 'expected' is (or is not) within the visible viewport (use after scroll actions to verify scroll target).\n" +
+	"- element_enabled / element_disabled: an interactive element matching 'expected' is enabled or disabled.\n" +
+	"- map_state: a property of the rendered map (zoom, center, layer visibility). Used with maps; 'expected' is a key=value condition like 'zoom>=10' or 'layer roads visible'.\n" +
+	"- compare: numeric comparison via the action's compare clause. REQUIRES action.compare to be set.",
+)
 
 /**
  * Payload of an `assert` action. Always carries a `type` (which runtime check
  * to perform) and `expected` (a free-form string interpreted per `type`).
  */
 export const assertionSchema = z.object({
-	/** Which assertion to perform. See {@link assertionTypeSchema}. */
 	type: assertionTypeSchema,
-	/**
-	 * What the assertion expects. Interpretation depends on `type`:
-	 * for `contains_text` it is a substring; for `element_visible` /
-	 * `element_exists` it is a description of the element; for `url_contains`
-	 * it is a URL substring; for `map_state` it is a string of `key=value`
-	 * pairs (e.g. `"zoom>=10 layer=roads"`); for `compare` it is the textual
-	 * hint of which page value to read.
-	 */
-	expected: z.string(),
-})
+	expected: z.string().describe(
+		"What the assertion expects. Interpretation depends on 'type': literal substring for contains_text / not_contains_text / url_contains; element description for element_* / link_exists / field_exists; key=value condition for map_state; short human-readable hint for compare and contains_remembered (the actual value comes from the compare clause / variable store).",
+	),
+}).describe("Payload of an 'assert' action. Combine with 'compare' on the action when type is 'compare' or 'contains_remembered'.")
 
 /** Inferred TypeScript type for {@link assertionSchema}. */
 export type Assertion = z.infer<typeof assertionSchema>

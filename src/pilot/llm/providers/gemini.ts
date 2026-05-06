@@ -16,65 +16,70 @@
 
 import type { GenerateRequest, LLMProvider } from "../provider.js"
 import { LLMApiError } from "../provider.js"
+import { callWithJsonSchema } from "./_helpers.js"
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com"
 
 /**
- * Native Google Gemini API provider.
+ * Native Google Gemini API provider. Sends the canonical Zod-derived JSON
+ * Schema via `responseJsonSchema` (Nov 2025+) which accepts `anyOf`, `$ref`
+ * and the rest of full JSON Schema, unlike the older `responseSchema` field.
  */
 export function createGeminiProvider(baseUrlOverride?: string): LLMProvider {
 	return {
-		async generate(req: GenerateRequest): Promise<unknown> {
-			const baseUrl = (baseUrlOverride ?? DEFAULT_BASE_URL).replace(/\/+$/, "")
-			const endpoint = `${baseUrl}/v1beta/models/${req.config.model}:generateContent?key=${req.config.apiKey}`
+		async generate<T>(req: GenerateRequest<T>): Promise<T> {
+			return callWithJsonSchema(req, async (jsonSchema) => {
+				const baseUrl = (baseUrlOverride ?? DEFAULT_BASE_URL).replace(/\/+$/, "")
+				const endpoint = `${baseUrl}/v1beta/models/${req.config.model}:generateContent?key=${req.config.apiKey}`
 
-			const systemMessages = req.messages.filter((m) => m.role === "system")
-			const conversationMessages = req.messages.filter((m) => m.role !== "system")
+				const systemMessages = req.messages.filter((m) => m.role === "system")
+				const conversationMessages = req.messages.filter((m) => m.role !== "system")
 
-			const systemInstruction =
-				systemMessages.length > 0
-					? { parts: systemMessages.map((m) => ({ text: m.content })) }
-					: undefined
+				const systemInstruction =
+					systemMessages.length > 0
+						? { parts: systemMessages.map((m) => ({ text: m.content })) }
+						: undefined
 
-			const contents = conversationMessages.map((m) => ({
-				role: m.role === "assistant" ? "model" : m.role,
-				parts: [{ text: m.content }],
-			}))
+				const contents = conversationMessages.map((m) => ({
+					role: m.role === "assistant" ? "model" : m.role,
+					parts: [{ text: m.content }],
+				}))
 
-			// Use `responseJsonSchema` (full JSON Schema) rather than the older
-			// `responseSchema` (limited OpenAPI 3.0 subset). The schemas we send
-			// include $ref / additionalProperties / definitions — all rejected by
-			// `responseSchema` but accepted by `responseJsonSchema`.
-			const body: Record<string, unknown> = {
-				contents,
-				generationConfig: {
-					temperature: 0,
-					responseMimeType: "application/json",
-					responseJsonSchema: req.schema,
-				},
-			}
-			if (systemInstruction) body.systemInstruction = systemInstruction
+				// Use `responseJsonSchema` (full JSON Schema) rather than the older
+				// `responseSchema` (limited OpenAPI 3.0 subset). The schemas we send
+				// include $ref / additionalProperties / definitions — all rejected by
+				// `responseSchema` but accepted by `responseJsonSchema`.
+				const body: Record<string, unknown> = {
+					contents,
+					generationConfig: {
+						temperature: 0,
+						responseMimeType: "application/json",
+						responseJsonSchema: jsonSchema,
+					},
+				}
+				if (systemInstruction) body.systemInstruction = systemInstruction
 
-			const response = await fetch(endpoint, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(body),
+				const response = await fetch(endpoint, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify(body),
+				})
+
+				if (!response.ok) {
+					const respBody = await response.text()
+					throw new LLMApiError(response.status, respBody)
+				}
+
+				const data = (await response.json()) as {
+					candidates: { content: { parts: { text: string }[] } }[]
+				}
+
+				const text = data.candidates[0]?.content?.parts[0]?.text
+				if (!text) {
+					throw new Error("LLM returned empty response")
+				}
+				return JSON.parse(text)
 			})
-
-			if (!response.ok) {
-				const respBody = await response.text()
-				throw new LLMApiError(response.status, respBody)
-			}
-
-			const data = (await response.json()) as {
-				candidates: { content: { parts: { text: string }[] } }[]
-			}
-
-			const text = data.candidates[0]?.content?.parts[0]?.text
-			if (!text) {
-				throw new Error("LLM returned empty response")
-			}
-			return JSON.parse(text)
 		},
 	}
 }

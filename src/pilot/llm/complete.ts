@@ -28,29 +28,28 @@ export interface CompleteOptions<T> {
 /**
  * Schema-aware completion with one bounded retry on validation failure.
  *
- * Flow: Zod -> JSON Schema -> provider.generate -> Zod parse. If parsing
- * fails on the first attempt, append a correction message containing the
- * Zod error and call the provider once more. If the second attempt also
- * fails, the ZodError is thrown.
+ * Schema conversion and validation live inside each provider; this is just
+ * the retry-on-`ZodError` wrapper. If the first call's response fails the
+ * provider's `schema.parse(...)`, append a correction message containing the
+ * Zod error and call the provider once more. If that also fails, the
+ * `ZodError` is thrown.
  *
- * LLMApiError (network/auth/5xx) is not retried; it bubbles to the caller.
+ * `LLMApiError` (network/auth/5xx) is not retried; it bubbles to the caller.
  */
 export async function complete<T>(opts: CompleteOptions<T>): Promise<T> {
-	const jsonSchema = z.toJSONSchema(opts.schema, { target: "draft-7" }) as object
-	const call = (messages: ChatMessage[]) =>
-		opts.provider.generate({
-			messages,
-			schema: jsonSchema,
-			schemaName: opts.schemaName,
-			config: opts.config,
-		})
-
-	const first = opts.schema.safeParse(await call(opts.messages))
-	if (first.success) return first.data
-
-	const correction: ChatMessage = {
-		role: "user",
-		content: `Your previous response failed schema validation:\n${first.error.message}\nReturn a corrected response that matches the schema exactly.`,
+	const baseRequest = {
+		schema: opts.schema,
+		schemaName: opts.schemaName,
+		config: opts.config,
 	}
-	return opts.schema.parse(await call([...opts.messages, correction]))
+	try {
+		return await opts.provider.generate({ ...baseRequest, messages: opts.messages })
+	} catch (err) {
+		if (!(err instanceof z.ZodError)) throw err
+		const correction: ChatMessage = {
+			role: "user",
+			content: `Your previous response failed schema validation:\n${err.message}\nReturn a corrected response that matches the schema exactly.`,
+		}
+		return opts.provider.generate({ ...baseRequest, messages: [...opts.messages, correction] })
+	}
 }

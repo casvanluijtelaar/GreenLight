@@ -17,6 +17,7 @@
 import { spawnSync } from "node:child_process"
 import type { ChatMessage, GenerateRequest, LLMProvider } from "../provider.js"
 import { LLMApiError } from "../provider.js"
+import { callWithJsonSchema } from "./_helpers.js"
 
 interface ClaudeCliResultEvent {
 	type: "result"
@@ -77,64 +78,68 @@ function findResultEvent(stdout: string): ClaudeCliResultEvent | undefined {
  */
 export function createClaudeCliProvider(): LLMProvider {
 	return {
-		async generate(req: GenerateRequest): Promise<unknown> {
-			const systemText = req.messages
-				.filter((m) => m.role === "system")
-				.map((m) => m.content)
-				.join("\n\n")
-			const stdin = buildStreamJsonInput(req.messages)
-			if (!stdin) throw new Error("claude CLI requires at least one non-system message")
+		async generate<T>(req: GenerateRequest<T>): Promise<T> {
+			return callWithJsonSchema(req, async (jsonSchema) => {
+				const systemText = req.messages
+					.filter((m) => m.role === "system")
+					.map((m) => m.content)
+					.join("\n\n")
+				const stdin = buildStreamJsonInput(req.messages)
+				if (!stdin) throw new Error("claude CLI requires at least one non-system message")
 
-			const args = [
-				"--print",
-				"--verbose",
-				"--input-format", "stream-json",
-				"--output-format", "stream-json",
-				"--model", req.config.model,
-				"--json-schema", JSON.stringify(req.schema),
-			]
-			if (systemText) args.push("--system-prompt", systemText)
+				const args = [
+					"--print",
+					"--verbose",
+					"--input-format", "stream-json",
+					"--output-format", "stream-json",
+					"--model", req.config.model,
+					"--json-schema", JSON.stringify(jsonSchema),
+				]
+				if (systemText) args.push("--system-prompt", systemText)
 
-			const result = spawnSync("claude", args, {
-				encoding: "utf8",
-				maxBuffer: 100 * 1024 * 1024,
-				timeout: 120_000,
-				input: stdin,
+				const result = spawnSync("claude", args, {
+					encoding: "utf8",
+					maxBuffer: 100 * 1024 * 1024,
+					timeout: 120_000,
+					input: stdin,
+				})
+
+				if (result.error) {
+					throw new Error(
+						`claude CLI not found. Install and authenticate Claude Code: ${result.error.message}`,
+					)
+				}
+				if (result.status !== 0) {
+					const statusStr = result.status === null ? "null" : String(result.status)
+					const signalStr = result.signal ? ` signal=${String(result.signal)}` : ""
+					const stderr = (result.stderr ?? "").trim()
+					const stdoutTail = (result.stdout ?? "").trim().slice(-2000)
+					const detail = [
+						stderr ? `stderr:\n${stderr}` : "",
+						stdoutTail ? `stdout (last 2000 chars):\n${stdoutTail}` : "",
+					].filter(Boolean).join("\n\n") || "(no stderr or stdout)"
+					throw new LLMApiError(
+						result.status ?? 1,
+						`claude exited status=${statusStr}${signalStr}\n${detail}`,
+					)
+				}
+
+				const event = findResultEvent(result.stdout)
+				if (!event) {
+					throw new Error(
+						`claude CLI produced no result event. Last 1000 chars of stdout: ${result.stdout.slice(-1000)}`,
+					)
+				}
+				if (event.is_error) {
+					throw new LLMApiError(1, event.result ?? "claude CLI returned an error")
+				}
+				if (event.structured_output === undefined) {
+					throw new Error(
+						`claude CLI returned no structured_output. Result: ${event.result ?? "(empty)"}`,
+					)
+				}
+				return event.structured_output
 			})
-
-			if (result.error) {
-				throw new Error(
-					`claude CLI not found. Install and authenticate Claude Code: ${result.error.message}`,
-				)
-			}
-			if (result.status !== 0) {
-				const stderr = (result.stderr ?? "").trim()
-				const stdoutTail = (result.stdout ?? "").trim().slice(-1000)
-				const detail = [
-					stderr ? `stderr: ${stderr}` : "",
-					stdoutTail ? `stdout (last 1000 chars): ${stdoutTail}` : "",
-				].filter(Boolean).join("\n") || "(no output)"
-				throw new LLMApiError(
-					result.status ?? 1,
-					`claude exited with status ${String(result.status)}\n${detail}`,
-				)
-			}
-
-			const event = findResultEvent(result.stdout)
-			if (!event) {
-				throw new Error(
-					`claude CLI produced no result event. Last 1000 chars of stdout: ${result.stdout.slice(-1000)}`,
-				)
-			}
-			if (event.is_error) {
-				throw new LLMApiError(1, event.result ?? "claude CLI returned an error")
-			}
-			if (event.structured_output === undefined) {
-				throw new Error(
-					`claude CLI returned no structured_output. Result: ${event.result ?? "(empty)"}`,
-				)
-			}
-			return event.structured_output
 		},
 	}
 }

@@ -15,8 +15,12 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { z } from "zod"
 import { createClaudeCliProvider } from "../../../../src/pilot/llm/providers/claude-cli.js"
 import { LLMApiError } from "../../../../src/pilot/llm/provider.js"
+
+const trivialSchema = z.object({ ok: z.boolean() })
+const flexSchema = z.object({ ok: z.boolean(), value: z.number().optional() })
 
 vi.mock("node:child_process", () => ({
 	spawnSync: vi.fn(),
@@ -59,7 +63,7 @@ describe("claude-cli provider generate()", () => {
 		const provider = createClaudeCliProvider()
 		await provider.generate({
 			messages: [{ role: "system", content: "sys" }, { role: "user", content: "hi" }],
-			schema: { type: "object", properties: { ok: { type: "boolean" } } },
+			schema: trivialSchema,
 			schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})
@@ -68,8 +72,10 @@ describe("claude-cli provider generate()", () => {
 		expect(argv).toContain("--verbose")
 		expect(argv[argv.indexOf("--input-format") + 1]).toBe("stream-json")
 		expect(argv[argv.indexOf("--output-format") + 1]).toBe("stream-json")
-		expect(JSON.parse(argv[argv.indexOf("--json-schema") + 1])).toEqual({
-			type: "object", properties: { ok: { type: "boolean" } },
+		expect(JSON.parse(argv[argv.indexOf("--json-schema") + 1])).toMatchObject({
+			type: "object",
+			properties: { ok: { type: "boolean" } },
+			required: ["ok"],
 		})
 	})
 
@@ -78,7 +84,7 @@ describe("claude-cli provider generate()", () => {
 		const provider = createClaudeCliProvider()
 		await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})
 		const { argv } = lastCall()
@@ -105,7 +111,7 @@ describe("claude-cli provider generate()", () => {
 				{ role: "system", content: "sys-b" },
 				{ role: "user", content: "hi" },
 			],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})
 		const { argv, opts } = lastCall()
@@ -124,7 +130,7 @@ describe("claude-cli provider generate()", () => {
 				{ role: "assistant", content: "answer" },
 				{ role: "user", content: "second" },
 			],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})
 		const { opts } = lastCall()
@@ -145,7 +151,7 @@ describe("claude-cli provider generate()", () => {
 		const provider = createClaudeCliProvider()
 		const result = await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: flexSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})
 		expect(result).toEqual({ ok: true, value: 42 })
@@ -167,7 +173,7 @@ describe("claude-cli provider generate()", () => {
 		const provider = createClaudeCliProvider()
 		const result = await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})
 		expect(result).toEqual({ ok: true })
@@ -177,7 +183,7 @@ describe("claude-cli provider generate()", () => {
 		const provider = createClaudeCliProvider()
 		await expect(provider.generate({
 			messages: [{ role: "system", content: "only system" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})).rejects.toThrow(/at least one non-system message/)
 		expect(vi.mocked(spawnSync)).not.toHaveBeenCalled()
@@ -191,7 +197,7 @@ describe("claude-cli provider generate()", () => {
 		const provider = createClaudeCliProvider()
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})).rejects.toBeInstanceOf(LLMApiError)
 	})
@@ -206,7 +212,7 @@ describe("claude-cli provider generate()", () => {
 		const provider = createClaudeCliProvider()
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})).rejects.toBeInstanceOf(LLMApiError)
 	})
@@ -221,7 +227,7 @@ describe("claude-cli provider generate()", () => {
 		const provider = createClaudeCliProvider()
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})).rejects.toThrow(/no structured_output/)
 	})
@@ -236,7 +242,7 @@ describe("claude-cli provider generate()", () => {
 		const provider = createClaudeCliProvider()
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "", model: "claude-sonnet-4" },
 		})).rejects.toThrow(/no result event/)
 	})

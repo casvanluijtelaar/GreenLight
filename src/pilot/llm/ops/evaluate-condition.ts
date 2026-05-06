@@ -27,7 +27,7 @@ import type { PageState } from "../../../reporter/types.js"
  * verdict plus an optional `reason` explaining the decision (useful for
  * debugging conditional branch selection).
  */
-export const evaluateConditionResponseSchema = z.object({
+export const evaluateConditionResponseSchema = z.strictObject({
 	result: z.boolean(),
 	reason: z.string().optional(),
 })

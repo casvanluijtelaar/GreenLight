@@ -16,56 +16,60 @@
 
 import type { GenerateRequest, LLMProvider } from "../provider.js"
 import { LLMApiError } from "../provider.js"
+import { callWithJsonSchema } from "./_helpers.js"
 
 /**
- * Claude API provider (Anthropic Messages API).
+ * Claude API provider (Anthropic Messages API). Sends the canonical Zod-
+ * derived JSON Schema as a tool input_schema; constrained decoding enforces it.
  */
 export function createClaudeApiProvider(baseUrl: string): LLMProvider {
 	const endpoint = `${baseUrl.replace(/\/+$/, "")}/v1/messages`
 
 	return {
-		async generate(req: GenerateRequest): Promise<unknown> {
-			const systemMessages = req.messages.filter((m) => m.role === "system")
-			const nonSystemMessages = req.messages.filter((m) => m.role !== "system")
-			const systemText = systemMessages.map((m) => m.content).join("\n\n")
+		async generate<T>(req: GenerateRequest<T>): Promise<T> {
+			return callWithJsonSchema(req, async (jsonSchema) => {
+				const systemMessages = req.messages.filter((m) => m.role === "system")
+				const nonSystemMessages = req.messages.filter((m) => m.role !== "system")
+				const systemText = systemMessages.map((m) => m.content).join("\n\n")
 
-			const response = await fetch(endpoint, {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-					"x-api-key": req.config.apiKey,
-					"anthropic-version": "2023-06-01",
-				},
-				body: JSON.stringify({
-					model: req.config.model,
-					max_tokens: 4096,
-					temperature: 0,
-					...(systemText ? { system: systemText } : {}),
-					messages: nonSystemMessages.map((m) => ({ role: m.role, content: m.content })),
-					tools: [{
-						name: req.schemaName,
-						input_schema: req.schema,
-					}],
-					tool_choice: { type: "tool", name: req.schemaName },
-				}),
+				const response = await fetch(endpoint, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						"x-api-key": req.config.apiKey,
+						"anthropic-version": "2023-06-01",
+					},
+					body: JSON.stringify({
+						model: req.config.model,
+						max_tokens: 4096,
+						temperature: 0,
+						...(systemText ? { system: systemText } : {}),
+						messages: nonSystemMessages.map((m) => ({ role: m.role, content: m.content })),
+						tools: [{
+							name: req.schemaName,
+							input_schema: jsonSchema,
+						}],
+						tool_choice: { type: "tool", name: req.schemaName },
+					}),
+				})
+
+				if (!response.ok) {
+					const body = await response.text()
+					throw new LLMApiError(response.status, body)
+				}
+
+				const data = (await response.json()) as {
+					content: ({ type: "tool_use"; name: string; input: unknown } | { type: string })[]
+				}
+
+				const toolUse = data.content.find(
+					(c): c is { type: "tool_use"; name: string; input: unknown } => c.type === "tool_use",
+				)
+				if (!toolUse) {
+					throw new Error("LLM returned empty response")
+				}
+				return toolUse.input
 			})
-
-			if (!response.ok) {
-				const body = await response.text()
-				throw new LLMApiError(response.status, body)
-			}
-
-			const data = (await response.json()) as {
-				content: ({ type: "tool_use"; name: string; input: unknown } | { type: string })[]
-			}
-
-			const toolUse = data.content.find(
-				(c): c is { type: "tool_use"; name: string; input: unknown } => c.type === "tool_use",
-			)
-			if (!toolUse) {
-				throw new Error("LLM returned empty response")
-			}
-			return toolUse.input
 		},
 	}
 }

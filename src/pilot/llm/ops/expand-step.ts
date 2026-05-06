@@ -29,7 +29,7 @@ import { globals } from "../../../globals.js"
  * sub-steps that decompose the original compound step (e.g. "fill the form")
  * against the live page state.
  */
-export const expandStepResponseSchema = z.object({
+export const expandStepResponseSchema = z.strictObject({
 	steps: z.array(plannedStepSchema),
 })
 

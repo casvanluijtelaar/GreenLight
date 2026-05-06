@@ -22,15 +22,17 @@ import { LLMApiError } from "../../../src/pilot/llm/provider.js"
 
 const schema = z.object({ ok: z.boolean() })
 
-function makeProvider(generateImpl: (req: GenerateRequest) => Promise<unknown>): LLMProvider {
+function makeProvider(
+	generateImpl: <T>(req: GenerateRequest<T>) => Promise<T>,
+): LLMProvider {
 	return {
-		generate: vi.fn(generateImpl),
+		generate: vi.fn(generateImpl) as unknown as LLMProvider["generate"],
 	}
 }
 
 describe("complete", () => {
 	it("returns the parsed value on first-try success", async () => {
-		const provider = makeProvider(async () => ({ ok: true }))
+		const provider = makeProvider(async <T,>() => ({ ok: true }) as T)
 		const result = await complete({
 			provider, config: { apiKey: "k", model: "m" },
 			messages: [{ role: "user", content: "hi" }],
@@ -40,11 +42,15 @@ describe("complete", () => {
 		expect(provider.generate).toHaveBeenCalledTimes(1)
 	})
 
-	it("retries once with a correction message when validation fails", async () => {
+	it("retries once with a correction message when the provider throws ZodError", async () => {
 		let call = 0
-		const provider = makeProvider(async () => {
+		const provider = makeProvider(async <T,>(req: GenerateRequest<T>) => {
 			call++
-			return call === 1 ? { not_ok: true } : { ok: true }
+			if (call === 1) {
+				// Simulate validation failure inside the provider.
+				return req.schema.parse({ not_ok: true }) as T
+			}
+			return { ok: true } as T
 		})
 		const result = await complete({
 			provider, config: { apiKey: "k", model: "m" },
@@ -54,14 +60,17 @@ describe("complete", () => {
 		expect(result).toEqual({ ok: true })
 		expect(provider.generate).toHaveBeenCalledTimes(2)
 
-		const secondCallMessages = (provider.generate as ReturnType<typeof vi.fn>).mock.calls[1][0].messages
+		const secondCallMessages =
+			(provider.generate as unknown as ReturnType<typeof vi.fn>).mock.calls[1][0].messages
 		expect(secondCallMessages).toHaveLength(2)
 		expect(secondCallMessages[1].role).toBe("user")
 		expect(secondCallMessages[1].content).toMatch(/failed schema validation/)
 	})
 
 	it("throws ZodError when both attempts fail validation", async () => {
-		const provider = makeProvider(async () => ({ wrong: "shape" }))
+		const provider = makeProvider(async <T,>(req: GenerateRequest<T>) => {
+			return req.schema.parse({ wrong: "shape" }) as T
+		})
 		await expect(complete({
 			provider, config: { apiKey: "k", model: "m" },
 			messages: [{ role: "user", content: "hi" }],
@@ -80,17 +89,16 @@ describe("complete", () => {
 		expect(provider.generate).toHaveBeenCalledTimes(1)
 	})
 
-	it("forwards JSON Schema (not Zod) to the provider", async () => {
-		const provider = makeProvider(async () => ({ ok: true }))
+	it("passes the Zod schema directly to the provider", async () => {
+		const provider = makeProvider(async <T,>() => ({ ok: true }) as T)
 		await complete({
 			provider, config: { apiKey: "k", model: "m" },
 			messages: [{ role: "user", content: "hi" }],
 			schema, schemaName: "thing",
 		})
-		const req = (provider.generate as ReturnType<typeof vi.fn>).mock.calls[0][0]
-		expect(req.schema).toBeTypeOf("object")
-		// JSON Schema has a "type" property at the root for object schemas.
-		expect((req.schema as { type?: string }).type).toBe("object")
+		const req = (provider.generate as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]
+		// Same Zod schema instance (not a JSON Schema object).
+		expect(req.schema).toBe(schema)
 		expect(req.schemaName).toBe("thing")
 	})
 })

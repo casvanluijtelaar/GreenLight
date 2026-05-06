@@ -35,12 +35,21 @@ export function createProvider(
 ): LLMProvider {
 	switch (name) {
 		case "openrouter":
+			// Passthrough: OpenRouter routes to many underlying providers; we
+			// can't predict which OpenAI-strict-style restrictions apply, so
+			// send the canonical schema and let each routed model handle it.
 			return createOpenAICompatibleProvider(
 				baseUrlOverride ?? "https://openrouter.ai/api/v1",
+				"passthrough",
 			)
 		case "openai":
+			// OpenAI direct uses strict-mode constrained decoding which rejects
+			// our canonical discriminated-union shape (shared first keys in
+			// anyOf branches) and requires every property to be in `required`.
+			// The openai-compatible provider applies the local transforms.
 			return createOpenAICompatibleProvider(
 				baseUrlOverride ?? "https://api.openai.com/v1",
+				"openai-strict",
 			)
 		case "claude-api":
 			return createClaudeApiProvider(

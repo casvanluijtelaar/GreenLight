@@ -15,8 +15,12 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { z } from "zod"
 import { createClaudeApiProvider } from "../../../../src/pilot/llm/providers/claude-api.js"
 import { LLMApiError } from "../../../../src/pilot/llm/provider.js"
+
+const trivialSchema = z.object({ ok: z.boolean() })
+const flexSchema = z.object({ ok: z.boolean(), value: z.number().optional() })
 
 describe("claude-api provider generate()", () => {
 	const originalFetch = globalThis.fetch
@@ -28,21 +32,26 @@ describe("claude-api provider generate()", () => {
 	})
 	afterEach(() => { globalThis.fetch = originalFetch })
 
-	it("forwards the JSON Schema as tools[0].input_schema with forced tool_choice", async () => {
+	it("forwards the canonical JSON Schema as tools[0].input_schema with forced tool_choice", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
 			content: [{ type: "tool_use", name: "thing", input: { ok: true } }],
 		}), { status: 200 }))
 		const provider = createClaudeApiProvider("https://api.anthropic.com")
-		const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] }
 		await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema,
+			schema: trivialSchema,
 			schemaName: "thing",
 			config: { apiKey: "k", model: "m" },
 		})
 		expect(fetchMock).toHaveBeenCalledTimes(1)
 		const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
-		expect(body.tools).toEqual([{ name: "thing", input_schema: schema }])
+		expect(body.tools).toHaveLength(1)
+		expect(body.tools[0].name).toBe("thing")
+		expect(body.tools[0].input_schema).toMatchObject({
+			type: "object",
+			properties: { ok: { type: "boolean" } },
+			required: ["ok"],
+		})
 		expect(body.tool_choice).toEqual({ type: "tool", name: "thing" })
 	})
 
@@ -56,7 +65,7 @@ describe("claude-api provider generate()", () => {
 		const provider = createClaudeApiProvider("https://api.anthropic.com")
 		const result = await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: flexSchema, schemaName: "thing",
 			config: { apiKey: "k", model: "m" },
 		})
 		expect(result).toEqual({ ok: true, value: 42 })
@@ -72,7 +81,7 @@ describe("claude-api provider generate()", () => {
 				{ role: "system", content: "be helpful" },
 				{ role: "user", content: "hi" },
 			],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "k", model: "m" },
 		})
 		const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
@@ -86,7 +95,7 @@ describe("claude-api provider generate()", () => {
 		const provider = createClaudeApiProvider("https://api.anthropic.com")
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "k", model: "m" },
 		})).rejects.toBeInstanceOf(LLMApiError)
 	})
@@ -98,7 +107,7 @@ describe("claude-api provider generate()", () => {
 		const provider = createClaudeApiProvider("https://api.anthropic.com")
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "k", model: "m" },
 		})).rejects.toThrow(/empty response/)
 	})

@@ -18,7 +18,12 @@ import { z } from "zod"
 import type { ChatMessage, LLMProvider, ProviderConfig } from "../provider.js"
 import { LLMApiError } from "../provider.js"
 import { complete } from "../complete.js"
-import { actionSchema, assertionSchema, compareSchema, type Action } from "../schemas/index.js"
+import {
+	actionSchema,
+	assertionSchema,
+	compareSchema,
+	type Action,
+} from "../schemas/index.js"
 import { pruneHistory } from "../history.js"
 import { buildUserMessage, buildCompactMessage } from "../../message-builder.js"
 import { formatA11yTree } from "../../a11y-parser.js"
@@ -31,47 +36,56 @@ const ACTION_KINDS = [
 ] as const
 
 /**
- * Wire schema: the flat object the LLM is asked to produce. Every action
- * field is optional; the `action` discriminator is an enum of literal kinds.
+ * Canonical wire schema for `resolveStep`. Flat single-object shape:
+ *   `{ action: <enum>, ref?, text?, value?, … }`
  *
- * Flat by design: nested discriminated unions trip up structured-output
- * mechanisms (the model often stringifies the inner object). Strict per-
- * variant validation is reapplied via `actionSchema.parse` in
- * {@link parseResolveStepResponse} once the wire response is back.
+ * Why flat instead of `{ result: <discriminated union> }`? Anthropic's
+ * tool-use parser stringifies the inner object whenever a tool parameter is
+ * typed as a top-level `oneOf` / `anyOf`. The model emits
+ * `{"result": "{\"action\": \"click\", \"ref\": \"e5\"}"}` (string) instead of
+ * nesting properly, and the schema validator then rejects it. The flat shape
+ * has no `oneOf` anywhere, so the model emits a clean object every time.
+ *
+ * The `.transform()` runs `actionSchema.parse(...)` on the validated wire
+ * shape, so the schema's output type is the strict canonical `Action` (per-
+ * variant rules enforced after generation). Other providers (Gemini,
+ * OpenRouter, claude-api) accept this same schema unmodified. The OpenAI
+ * provider uses the sibling below.
  */
-export const resolveStepResponseSchema = z.object({
-	thinking: z.string().optional(),
-	action: z.enum(ACTION_KINDS),
-	ref: z.string().optional(),
-	text: z.string().optional(),
-	testid: z.string().optional(),
-	value: z.string().optional(),
-	option: z.string().optional(),
+export const resolveStepResponseSchema = z.strictObject({
+	action: z.enum(ACTION_KINDS).describe(
+		"Which browser action to perform. Variants and their required fields:\n" +
+		"- click / check / uncheck / clear: targeting (ref preferred, fall back to text or testid).\n" +
+		"- type: targeting + value (the literal text to type).\n" +
+		"- select: targeting + option (the dropdown option label).\n" +
+		"- autocomplete: targeting + value (search text) + optional option (which suggestion).\n" +
+		"- scroll: value ('up' / 'down' / 'top' / 'bottom' or a target description).\n" +
+		"- navigate: value (absolute URL or path starting with '/'). Do NOT use for 'go to X page' — that's a click.\n" +
+		"- press: value (key name like 'Enter' or 'Control+A').\n" +
+		"- wait: optional value (duration like '500ms' or text to wait for).\n" +
+		"- upload: targeting + value (file path; comma-separated for multiple files).\n" +
+		"- assert: assertion (the check) + optional ref + optional compare clause.\n" +
+		"- remember: targeting + rememberAs (variable name to store the captured text).\n" +
+		"- count: targeting + rememberAs (variable name to store the count).",
+	),
+	ref: z.string()
+		.regex(/^e\d+$/)
+		.describe("Stable element ref from the accessibility tree, e.g. 'e1', 'e2'.")
+		.optional(),
+	text: z.string().describe("Visible text on the element. Use when ref is not available.").optional(),
+	testid: z.string().describe("Value of the element's data-testid attribute.").optional(),
+	value: z.string().describe("Free-form value whose meaning depends on 'action'.").optional(),
+	option: z.string().describe("For 'select': dropdown option label. For 'autocomplete': suggestion to pick.").optional(),
 	assertion: assertionSchema.optional(),
 	compare: compareSchema.optional(),
-	rememberAs: z.string().optional(),
-})
+	rememberAs: z.string()
+		.regex(/^[a-z][a-z0-9_]*$/)
+		.describe("For 'remember' / 'count': snake_case identifier.")
+		.optional(),
+}).transform((flat): Action => actionSchema.parse(flat))
 
 /** Stable name forwarded to providers (OpenAI tool name, Anthropic tool name). */
 export const RESOLVE_STEP_SCHEMA_NAME = "resolve_step_response"
-
-/** In-memory shape the rest of the codebase consumes. */
-export interface ResolveStepResponse {
-	thinking?: string
-	action: Action
-}
-
-/**
- * Translate a flat wire response into a strict `{thinking, action}` envelope.
- * Runs `actionSchema.parse` so per-variant rules (e.g. "click takes ref/text/
- * testid only, never value") are enforced before any executor sees the action.
- */
-export function parseResolveStepResponse(
-	raw: z.infer<typeof resolveStepResponseSchema>,
-): ResolveStepResponse {
-	const { thinking, ...flat } = raw
-	return { thinking, action: actionSchema.parse(flat) }
-}
 
 export const SYSTEM_PROMPT = `You are The Pilot, an AI agent that executes end-to-end tests in a web browser.
 
@@ -125,7 +139,8 @@ Each element in the tree may include enrichment properties indented below it:
 Any step starting with "check that" is ALWAYS an assertion — never return an interaction.
 
 Assertion type selection:
-- contains_text / not_contains_text: check page body text.
+- contains_text / not_contains_text: check that the page body contains (or does not contain) a LITERAL substring. Use this whenever the step quotes a fixed string (e.g. "check that the page contains 'Event ID'") or describes static text. The "expected" field holds the literal substring.
+- contains_remembered: check that a previously REMEMBERED variable's value appears on the page. ONLY use when the step refers back to a value captured by an earlier "remember" action (e.g. "check that the order ID we remembered is shown"). Set "compare.variable" to the variable name; "expected" is a short human-readable description. NEVER use this for literal substrings — that is contains_text.
 - url_contains: check the current URL.
 - element_visible / element_not_visible: check element visibility.
 - element_disabled / element_enabled: check if a button is disabled or enabled.
@@ -148,8 +163,7 @@ map_state "expected" examples:
 
 ═══ Decision examples ═══
 
-Each example is the full top-level response object. Fields not relevant to the
-chosen action are simply omitted; do NOT nest the action under another field.
+Each example is the full top-level response object. Set "action" to the variant name and fill ONLY the fields meaningful for that variant; leave the rest unset.
 
 Clicking a button by ref (ref available in tree):
 {"action":"click","ref":"e5"}
@@ -177,6 +191,12 @@ Compare against a remembered variable:
 
 Compare against a literal number (variable set to "_"; literal is a string):
 {"action":"assert","assertion":{"type":"compare","expected":"product count"},"ref":"e15","compare":{"variable":"_","operator":"greater_than","literal":"0"}}
+
+Literal substring check (the step quotes a fixed string):
+{"action":"assert","assertion":{"type":"contains_text","expected":"Event ID"}}
+
+Check that a remembered value is on the page (the step refers to a value captured earlier by "remember"):
+{"action":"assert","assertion":{"type":"contains_remembered","expected":"the saved order id"},"compare":{"variable":"order_id","operator":"equal"}}
 
 Map assertion:
 {"action":"assert","assertion":{"type":"map_state","expected":"map shows Stockholm"}}
@@ -246,10 +266,10 @@ export async function resolveStep(
 		console.log(`      [resolve] Pruned history: ${String(deps.history.length)} -> ${String(historySlice.length)} messages`)
 	}
 
-	// 4. Call the LLM with the flat wire schema; reconstruct the strict envelope.
-	let response: ResolveStepResponse
+	// 4. Call the LLM with the canonical schema.
+	let action: Action
 	try {
-		const raw = await complete({
+		const response = await complete({
 			provider: deps.provider,
 			config: deps.config,
 			messages: [
@@ -260,7 +280,7 @@ export async function resolveStep(
 			schema: resolveStepResponseSchema,
 			schemaName: RESOLVE_STEP_SCHEMA_NAME,
 		})
-		response = parseResolveStepResponse(raw)
+		action = response
 	} catch (err) {
 		// Context-length recovery: clear history and retry with a fresh full message.
 		// Only matches genuine context-overflow phrasings. Avoids JSON property names
@@ -270,9 +290,9 @@ export async function resolveStep(
 				.test(err.message)
 		)
 		if (isContextOverflow) {
-			console.log(`      Context length exceeded, clearing history and retrying. Original error: ${err.message}`)
+			console.log(`Context length exceeded, clearing history and retrying. Original error: ${err.message}`)
 			const freshMessage = buildUserMessage(step, pageState)
-			const raw = await complete({
+			const response = await complete({
 				provider: deps.provider,
 				config: deps.config,
 				messages: [
@@ -282,13 +302,13 @@ export async function resolveStep(
 				schema: resolveStepResponseSchema,
 				schemaName: RESOLVE_STEP_SCHEMA_NAME,
 			})
-			response = parseResolveStepResponse(raw)
-			deps.cache.set(cacheKey, response.action)
+			action = response
+			deps.cache.set(cacheKey, action)
 			return {
-				action: response.action,
+				action,
 				newHistory: [
 					{ role: "user", content: freshMessage },
-					{ role: "assistant", content: JSON.stringify(response) },
+					{ role: "assistant", content: JSON.stringify(action) },
 				],
 				newPrevPageState: pageState,
 				newPrevFormattedTree: formatA11yTree(pageState.a11yTree),
@@ -298,13 +318,13 @@ export async function resolveStep(
 	}
 
 	// 5. Cache and return.
-	deps.cache.set(cacheKey, response.action)
+	deps.cache.set(cacheKey, action)
 	return {
-		action: response.action,
+		action: action,
 		newHistory: [
 			...deps.history,
 			{ role: "user", content: userMessage },
-			{ role: "assistant", content: JSON.stringify(response) },
+			{ role: "assistant", content: JSON.stringify(action) },
 		],
 		newPrevPageState: pageState,
 		newPrevFormattedTree: formatA11yTree(pageState.a11yTree),

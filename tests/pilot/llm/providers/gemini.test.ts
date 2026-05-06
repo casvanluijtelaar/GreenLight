@@ -15,8 +15,12 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { z } from "zod"
 import { createGeminiProvider } from "../../../../src/pilot/llm/providers/gemini.js"
 import { LLMApiError } from "../../../../src/pilot/llm/provider.js"
+
+const trivialSchema = z.object({ ok: z.boolean() })
+const flexSchema = z.object({ ok: z.boolean(), value: z.number().optional() })
 
 describe("gemini provider generate()", () => {
 	const originalFetch = globalThis.fetch
@@ -28,34 +32,35 @@ describe("gemini provider generate()", () => {
 	})
 	afterEach(() => { globalThis.fetch = originalFetch })
 
-	it("forwards the JSON Schema as generationConfig.responseJsonSchema with responseMimeType json", async () => {
+	it("forwards the canonical JSON Schema as generationConfig.responseJsonSchema with responseMimeType json", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
 			candidates: [{ content: { parts: [{ text: JSON.stringify({ ok: true }) }] } }],
 		}), { status: 200 }))
 		const provider = createGeminiProvider("https://generativelanguage.googleapis.com")
-		const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] }
 		await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema,
+			schema: trivialSchema,
 			schemaName: "thing",
 			config: { apiKey: "k", model: "gemini-1.5-pro" },
 		})
 		expect(fetchMock).toHaveBeenCalledTimes(1)
 		const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
-		expect(body.generationConfig).toMatchObject({
-			responseMimeType: "application/json",
-			responseJsonSchema: schema,
+		expect(body.generationConfig.responseMimeType).toBe("application/json")
+		expect(body.generationConfig.responseJsonSchema).toMatchObject({
+			type: "object",
+			properties: { ok: { type: "boolean" } },
+			required: ["ok"],
 		})
 	})
 
-	it("returns the parsed JSON object", async () => {
+	it("returns the parsed and validated JSON object", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({
 			candidates: [{ content: { parts: [{ text: JSON.stringify({ ok: true, value: 42 }) }] } }],
 		}), { status: 200 }))
 		const provider = createGeminiProvider("https://generativelanguage.googleapis.com")
 		const result = await provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: flexSchema, schemaName: "thing",
 			config: { apiKey: "k", model: "gemini-1.5-pro" },
 		})
 		expect(result).toEqual({ ok: true, value: 42 })
@@ -71,7 +76,7 @@ describe("gemini provider generate()", () => {
 				{ role: "system", content: "be helpful" },
 				{ role: "user", content: "hi" },
 			],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "k", model: "gemini-1.5-pro" },
 		})
 		const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
@@ -85,7 +90,7 @@ describe("gemini provider generate()", () => {
 		const provider = createGeminiProvider("https://generativelanguage.googleapis.com")
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "k", model: "gemini-1.5-pro" },
 		})).rejects.toBeInstanceOf(LLMApiError)
 	})
@@ -97,7 +102,7 @@ describe("gemini provider generate()", () => {
 		const provider = createGeminiProvider("https://generativelanguage.googleapis.com")
 		await expect(provider.generate({
 			messages: [{ role: "user", content: "hi" }],
-			schema: {}, schemaName: "thing",
+			schema: trivialSchema, schemaName: "thing",
 			config: { apiKey: "k", model: "gemini-1.5-pro" },
 		})).rejects.toThrow(/empty response/)
 	})

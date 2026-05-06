@@ -23,7 +23,7 @@ import { plannedStepSchema, type PlannedStep } from "../schemas/index.js"
  * JSON shape the LLM returns for a `planSteps` call: an array of planned
  * steps wrapping the original test input into structured plan steps.
  */
-export const planStepsResponseSchema = z.object({
+export const planStepsResponseSchema = z.strictObject({
 	steps: z.array(plannedStepSchema),
 })
 
@@ -50,7 +50,8 @@ Each output step describes ONE atomic interaction. If a step implies multiple in
 
 Rules:
 - Any step that says "check that", "verify", or similar is ALWAYS an assertion (atomic with an assert action).
-- Assertions with explicit quoted strings resolve as atomic assert steps.
+- Assertions with explicit quoted literal strings (e.g. "check that the page contains 'Event ID'") resolve as atomic assert steps with assertion type "contains_text" and "expected" set to the quoted substring. NEVER use "contains_remembered" for a quoted literal.
+- Assertions that check a previously REMEMBERED variable's value appears on the page (e.g. "check that the order ID we saved earlier is shown") use assertion type "contains_remembered" and require "compare.variable" set to the remembered name.
 - Assertions that compare a count or number against a specific number (e.g. "greater than 0", "at least 5") resolve as atomic assert steps with assertion type "compare" and a compare clause where "variable" is "_" and "literal" is the number as a string (e.g. "0").
 - Assertions that compare against a previously remembered value (e.g. "check that the count decreased") require a COMPARE clause pairing with a prior REMEMBER or COUNT (set "variable" to the remembered name).
 - Assertions WITHOUT quoted strings and without numeric comparisons cannot be pre-resolved. Use kind "page" with the full step as description.
@@ -108,6 +109,12 @@ Output: {"kind":"atomic","step":"check that the price decreased","action":{"acti
 
 Input: "check that the count of products shown is greater than 0"
 Output: {"kind":"atomic","step":"check that the count of products shown is greater than 0","action":{"action":"assert","assertion":{"type":"compare","expected":"count of products shown"},"compare":{"variable":"_","operator":"greater_than","literal":"0"}},"inputStepIndex":0}
+
+Input: "check that the page contains 'Event ID'"
+Output: {"kind":"atomic","step":"check that the page contains 'Event ID'","action":{"action":"assert","assertion":{"type":"contains_text","expected":"Event ID"}},"inputStepIndex":0}
+
+Input: "check that the order ID we remembered is shown" (assuming a prior REMEMBER stored "order_id")
+Output: {"kind":"atomic","step":"check that the order ID we remembered is shown","action":{"action":"assert","assertion":{"type":"contains_remembered","expected":"the saved order id"},"compare":{"variable":"order_id","operator":"equal"}},"inputStepIndex":0}
 
 Input: "if 'Accept cookies' is visible, click it"
 Output: {"kind":"conditional","step":"if 'Accept cookies' is visible, click it","condition":{"kind":"visible","value":"Accept cookies"},"thenBranch":[{"kind":"page","step":"click 'Accept cookies'"}],"inputStepIndex":0}

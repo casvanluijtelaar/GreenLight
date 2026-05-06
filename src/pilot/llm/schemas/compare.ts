@@ -29,7 +29,9 @@ export const compareOperatorSchema = z.enum([
 	"not_equal",
 	"less_or_equal",
 	"greater_or_equal",
-])
+]).describe(
+	"Comparison operator. Numeric semantics where both sides parse as numbers; otherwise string equality / inequality for 'equal' / 'not_equal'.",
+)
 
 /** Inferred TypeScript type for {@link compareOperatorSchema}. */
 export type CompareOperator = z.infer<typeof compareOperatorSchema>
@@ -47,20 +49,14 @@ export type CompareOperator = z.infer<typeof compareOperatorSchema>
  *   remembered value against the literal (no fresh page read).
  */
 export const compareSchema = z.object({
-	/**
-	 * Name of a variable previously stored by `remember` / `count`. The
-	 * sentinel `"_"` means "no variable; use `literal` only".
-	 */
-	variable: z.string(),
-	/** Comparison operator. See {@link compareOperatorSchema}. */
+	variable: z.string()
+		.regex(/^(_|[a-z][a-z0-9_]*)$/)
+		.describe("Either the snake_case name of a variable previously stored by 'remember' or 'count', OR the sentinel '_' meaning 'no variable; use literal only'."),
 	operator: compareOperatorSchema,
-	/**
-	 * Optional literal value. When set, the comparison uses this literal
-	 * either alone (when `variable === "_"`) or against the remembered
-	 * variable (when both are set).
-	 */
-	literal: z.string().optional(),
-})
+	literal: z.string().describe(
+		"Literal value to compare against (as a string; the runtime parses numerics). When 'variable' is '_' this is required and the runtime reads the page value and compares it to this literal. When 'variable' names a stored value this is optional; if set, the comparison is variable-vs-literal (no fresh page read).",
+	).optional(),
+}).describe("Comparison clause attached to an 'assert' action with type 'compare' or 'contains_remembered'.")
 
 /** Inferred TypeScript type for {@link compareSchema}. */
 export type Compare = z.infer<typeof compareSchema>
